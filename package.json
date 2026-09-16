@@ -1,0 +1,9 @@
+{
+  "name": "snow-slide-multiplayer-monorepo",
+  "private": true,
+  "scripts": {
+    "dev:server": "pnpm --filter server dev",
+    "dev:client": "pnpm --filter client dev",
+    "test": "pnpm --filter shared test"
+  }
+}

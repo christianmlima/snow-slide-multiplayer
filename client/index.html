@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snow Slide Multiplayer - Alpine Hub</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #0f172a;
+      font-family: sans-serif;
+      user-select: none;
+    }
+    #app {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    #ui-overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: white;
+      background: rgba(15, 23, 42, 0.8);
+      padding: 15px 25px;
+      border-radius: 12px;
+      backdrop-filter: blur(5px);
+      border: 1px solid rgba(255,255,255,0.1);
+      pointer-events: none;
+    }
+    h1 { margin: 0 0 5px 0; font-size: 1.4rem; color: #38bdf8; }
+    p { margin: 0; font-size: 0.9rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div id="ui-overlay">
+    <h1>❄️ Snow Slide Multiplayer</h1>
+    <p>Use W, A, S, D ou Setas para se movimentar no Hub Alpino.</p>
+  </div>
+  <div id="app"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

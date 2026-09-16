@@ -1,0 +1,21 @@
+{
+  "name": "@snow-slide/client",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@snow-slide/shared": "workspace:*",
+    "@dimforge/rapier3d-compat": "^0.11.2",
+    "colyseus.js": "^0.15.14",
+    "miniplex": "^1.1.1",
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  }
+}
