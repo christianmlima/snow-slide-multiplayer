@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Snow Slide Multiplayer - Alpine Hub</title>
+  <title>Snow Slide Multiplayer - Match & Descent</title>
   <style>
     body {
       margin: 0;
@@ -22,21 +22,34 @@
       top: 20px;
       left: 20px;
       color: white;
-      background: rgba(15, 23, 42, 0.8);
+      background: rgba(15, 23, 42, 0.85);
       padding: 15px 25px;
       border-radius: 12px;
-      backdrop-filter: blur(5px);
+      backdrop-filter: blur(8px);
       border: 1px solid rgba(255,255,255,0.1);
-      pointer-events: none;
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
     }
-    h1 { margin: 0 0 5px 0; font-size: 1.4rem; color: #38bdf8; }
-    p { margin: 0; font-size: 0.9rem; color: #94a3b8; }
+    h1 { margin: 0 0 5px 0; font-size: 1.3rem; color: #38bdf8; }
+    p { margin: 0 0 12px 0; font-size: 0.85rem; color: #94a3b8; }
+    #ready-btn {
+      background: linear-gradient(to right, #0ea5e9, #6366f1);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.2s;
+    }
+    #ready-btn:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
   <div id="ui-overlay">
-    <h1>❄️ Snow Slide Multiplayer</h1>
-    <p>Use W, A, S, D ou Setas para se movimentar no Hub Alpino.</p>
+    <h1>❄️ Snow Slide Match</h1>
+    <p id="phase-info">🚠 No Bondinho - Aguardando Ready-up</p>
+    <button id="ready-btn">Estou Pronto! (Ready)</button>
   </div>
   <div id="app"></div>
   <script type="module" src="/src/main.ts"></script>
