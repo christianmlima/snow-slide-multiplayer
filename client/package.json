@@ -8,13 +8,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@snow-slide/shared": "workspace:*",
+    "@colyseus/schema": "^5.0.32",
     "@dimforge/rapier3d-compat": "^0.11.2",
+    "@snow-slide/shared": "file:../shared",
     "colyseus.js": "^0.15.14",
-    "miniplex": "^1.1.1",
     "three": "^0.165.0"
   },
   "devDependencies": {
+    "@types/three": "^0.186.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11"
   }

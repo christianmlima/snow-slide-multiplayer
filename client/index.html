@@ -2,55 +2,256 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Snow Slide Multiplayer - Match & Descent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Snow Slide - Alpine Hub & Descent</title>
   <style>
     body {
       margin: 0;
       overflow: hidden;
       background: #0f172a;
-      font-family: sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
     }
     #app {
       width: 100vw;
       height: 100vh;
       display: block;
     }
-    #ui-overlay {
+    .screen {
       position: absolute;
-      top: 20px;
-      left: 20px;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 58, 138, 0.95));
       color: white;
-      background: rgba(15, 23, 42, 0.85);
-      padding: 15px 25px;
-      border-radius: 12px;
-      backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,0.1);
-      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
+      z-index: 30;
     }
-    h1 { margin: 0 0 5px 0; font-size: 1.3rem; color: #38bdf8; }
-    p { margin: 0 0 12px 0; font-size: 0.85rem; color: #94a3b8; }
-    #ready-btn {
+    .card {
+      background: rgba(30, 41, 59, 0.9);
+      padding: 35px;
+      border-radius: 18px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+      text-align: center;
+      max-width: 360px;
+      width: 90%;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    h1 { margin-top: 0; font-size: 2rem; color: #38bdf8; }
+    p { color: #94a3b8; font-size: 0.9rem; margin-bottom: 20px; }
+    input {
+      width: 100%;
+      padding: 12px 16px;
+      margin: 10px 0;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      color: white;
+      font-size: 1rem;
+      box-sizing: border-box;
+      outline: none;
+    }
+    input:focus { border-color: #38bdf8; }
+    .btn {
       background: linear-gradient(to right, #0ea5e9, #6366f1);
       color: white;
       border: none;
-      padding: 10px 20px;
+      padding: 12px 20px;
+      font-size: 1rem;
       font-weight: bold;
-      border-radius: 8px;
+      border-radius: 10px;
       cursor: pointer;
       width: 100%;
+      margin-top: 10px;
       transition: opacity 0.2s;
     }
-    #ready-btn:hover { opacity: 0.9; }
+    .btn:hover { opacity: 0.9; }
+    .btn.secondary { background: #334155; margin-top: 6px; }
+
+    /* Número da Versão no Topo (Conforme solicitado) */
+    #version-badge {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      background: rgba(15, 23, 42, 0.7);
+      color: #38bdf8;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      font-weight: bold;
+      z-index: 25;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      pointer-events: none;
+    }
+
+    /* UI Minimalista do Hub */
+    #hub-ui {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      color: white;
+      background: rgba(15, 23, 42, 0.8);
+      padding: 14px 18px;
+      border-radius: 12px;
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.1);
+      z-index: 10;
+      display: none;
+      pointer-events: auto;
+    }
+    #hub-ui h2 { margin: 0 0 3px 0; font-size: 1rem; color: #38bdf8; }
+    #hub-ui p { margin: 0 0 8px 0; font-size: 0.75rem; color: #94a3b8; }
+    .stat { font-size: 0.85rem; font-weight: bold; color: #facc15; margin-bottom: 8px; display: block; }
+    .mini-btn {
+      background: #0ea5e9;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      font-weight: bold;
+      font-size: 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      width: 100%;
+      margin-bottom: 5px;
+    }
+
+    /* HUD de Corrida */
+    #racing-hud {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      color: white;
+      background: rgba(15, 23, 42, 0.8);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: bold;
+      z-index: 10;
+      display: none;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #racing-hud span { color: #38bdf8; }
+
+    #back-hub-btn {
+      position: absolute;
+      top: 15px;
+      right: 90px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      font-weight: bold;
+      font-size: 0.8rem;
+      border-radius: 8px;
+      cursor: pointer;
+      z-index: 10;
+      display: none;
+    }
+
+    /* Joystick Analógico Virtual */
+    #joystick-ui {
+      position: absolute;
+      bottom: 30px;
+      left: 30px;
+      width: 120px;
+      height: 120px;
+      z-index: 15;
+      display: none;
+      touch-action: none;
+    }
+    #joystick-base {
+      position: absolute;
+      width: 120px;
+      height: 120px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      backdrop-filter: blur(4px);
+    }
+    #joystick-knob {
+      position: absolute;
+      top: 35px;
+      left: 35px;
+      width: 50px;
+      height: 50px;
+      background: rgba(56, 189, 248, 0.7);
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      pointer-events: none;
+      transition: transform 0.05s linear;
+    }
+
+    /* Botão de Pulo Dedicado (Direita) */
+    #jump-btn {
+      position: absolute;
+      bottom: 35px;
+      right: 35px;
+      width: 75px;
+      height: 75px;
+      background: rgba(14, 165, 233, 0.5);
+      backdrop-filter: blur(5px);
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      color: white;
+      font-size: 1.5rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      z-index: 15;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+      user-select: none;
+    }
+    #jump-btn:active { background: rgba(56, 189, 248, 0.8); }
   </style>
 </head>
 <body>
-  <div id="ui-overlay">
-    <h1>❄️ Snow Slide Match</h1>
-    <p id="phase-info">🚠 No Bondinho - Aguardando Ready-up</p>
-    <button id="ready-btn">Estou Pronto! (Ready)</button>
+
+  <!-- Badge com o Número da Versão Ativa -->
+  <div id="version-badge">v1.4.2-STABLE</div>
+
+  <!-- Tela de Login -->
+  <div id="login-screen" class="screen">
+    <div class="card">
+      <h1>❄️ Snow Slide</h1>
+      <p>Digite seu apelido para entrar</p>
+      <input type="text" id="username-input" placeholder="Seu apelido..." autocomplete="off">
+      <button id="login-btn" class="btn">Entrar</button>
+      <button id="quick-login-btn" class="btn secondary">⚡ Login Rápido</button>
+    </div>
   </div>
+
+  <!-- UI Minimalista do Hub -->
+  <div id="hub-ui">
+    <h2>🏔️ Rodoviária Alpina</h2>
+    <span class="stat">💰 <span id="currency-val">1250</span> pts</span>
+    <button id="board-shop-btn" class="mini-btn">🛒 Trocar Veículo</button>
+    <button id="cable-car-btn" class="mini-btn" style="background:#0284c7;">🚠 Iniciar Corrida</button>
+  </div>
+
+  <!-- HUD de Corrida -->
+  <div id="racing-hud">
+    🏆 Pontuação: <span id="score-val">0</span>
+  </div>
+
+  <button id="back-hub-btn">⬅ Voltar ao Hub</button>
+
+  <!-- Analógico Virtual & Botão de Pulo -->
+  <div id="joystick-ui">
+    <div id="joystick-base">
+      <div id="joystick-knob"></div>
+    </div>
+  </div>
+  <div id="jump-btn">🔼</div>
+
   <div id="app"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>

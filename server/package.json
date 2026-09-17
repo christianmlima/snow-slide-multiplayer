@@ -6,12 +6,12 @@
     "dev": "tsx watch src/index.ts"
   },
   "dependencies": {
+    "@snow-slide/shared": "file:../shared",
     "@colyseus/schema": "^3.0.0",
     "@dimforge/rapier3d-compat": "^0.11.2",
     "colyseus": "^0.15.14",
     "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "miniplex": "^1.1.1"
+    "express": "^4.19.2"
   },
   "devDependencies": {
     "tsx": "^4.7.1",

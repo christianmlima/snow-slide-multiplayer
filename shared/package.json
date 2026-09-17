@@ -9,6 +9,6 @@
     "vitest": "^1.6.0"
   },
   "dependencies": {
-    "@colyseus/schema": "^3.0.0"
+    "@colyseus/schema": "^3.0.76"
   }
 }

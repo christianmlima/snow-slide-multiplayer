@@ -6,7 +6,9 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src", "../shared/src"]
 }
