@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: snow-slide-server
+    env: node
+    region: ohio
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm run dev
+    envVars:
+      - key: PORT
+        value: 2567
