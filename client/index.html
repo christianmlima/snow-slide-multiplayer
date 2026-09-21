@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Snow Slide - Alpine Hub & Descent</title>
+  <title>Snow Slide - Alpine Village & Descent</title>
   <style>
     body {
       margin: 0;
@@ -74,7 +74,7 @@
     .btn:hover { opacity: 0.9; }
     .btn.secondary { background: #334155; margin-top: 6px; }
 
-    /* Número da Versão no Topo (Conforme solicitado) */
+    /* Versão Ativa */
     #version-badge {
       position: absolute;
       top: 10px;
@@ -91,36 +91,38 @@
       pointer-events: none;
     }
 
-    /* UI Minimalista do Hub */
+    /* UI do Hub */
     #hub-ui {
       position: absolute;
       top: 15px;
       left: 15px;
       color: white;
-      background: rgba(15, 23, 42, 0.8);
+      background: rgba(15, 23, 42, 0.85);
       padding: 14px 18px;
-      border-radius: 12px;
+      border-radius: 14px;
       backdrop-filter: blur(6px);
-      border: 1px solid rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.12);
       z-index: 10;
       display: none;
       pointer-events: auto;
+      max-width: 250px;
     }
-    #hub-ui h2 { margin: 0 0 3px 0; font-size: 1rem; color: #38bdf8; }
-    #hub-ui p { margin: 0 0 8px 0; font-size: 0.75rem; color: #94a3b8; }
-    .stat { font-size: 0.85rem; font-weight: bold; color: #facc15; margin-bottom: 8px; display: block; }
+    #hub-ui h2 { margin: 0 0 3px 0; font-size: 1.1rem; color: #38bdf8; }
+    .stat { font-size: 0.9rem; font-weight: bold; color: #facc15; margin-bottom: 10px; display: block; }
     .mini-btn {
-      background: #0ea5e9;
+      background: #0284c7;
       color: white;
       border: none;
-      padding: 6px 12px;
+      padding: 8px 12px;
       font-weight: bold;
-      font-size: 0.75rem;
-      border-radius: 6px;
+      font-size: 0.78rem;
+      border-radius: 8px;
       cursor: pointer;
       width: 100%;
-      margin-bottom: 5px;
+      margin-bottom: 6px;
+      transition: background 0.2s;
     }
+    .mini-btn:hover { background: #0369a1; }
 
     /* HUD de Corrida */
     #racing-hud {
@@ -128,14 +130,14 @@
       top: 15px;
       left: 15px;
       color: white;
-      background: rgba(15, 23, 42, 0.8);
-      padding: 10px 16px;
-      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.85);
+      padding: 10px 18px;
+      border-radius: 12px;
       font-size: 1rem;
       font-weight: bold;
       z-index: 10;
       display: none;
-      border: 1px solid rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.12);
     }
     #racing-hud span { color: #38bdf8; }
 
@@ -181,7 +183,7 @@
       left: 35px;
       width: 50px;
       height: 50px;
-      background: rgba(56, 189, 248, 0.7);
+      background: rgba(56, 189, 248, 0.75);
       border: 2px solid white;
       border-radius: 50%;
       box-shadow: 0 4px 8px rgba(0,0,0,0.3);
@@ -189,14 +191,14 @@
       transition: transform 0.05s linear;
     }
 
-    /* Botão de Pulo Dedicado (Direita) */
+    /* Botão de Pulo Dedicado */
     #jump-btn {
       position: absolute;
       bottom: 35px;
       right: 35px;
       width: 75px;
       height: 75px;
-      background: rgba(14, 165, 233, 0.5);
+      background: rgba(14, 165, 233, 0.55);
       backdrop-filter: blur(5px);
       border: 2px solid rgba(255, 255, 255, 0.6);
       border-radius: 50%;
@@ -210,31 +212,235 @@
       box-shadow: 0 8px 16px rgba(0,0,0,0.3);
       user-select: none;
     }
-    #jump-btn:active { background: rgba(56, 189, 248, 0.8); }
+    #jump-btn:active { background: rgba(56, 189, 248, 0.85); }
+
+    /* Botão de Corrida Dedicado para Mobile */
+    #run-btn {
+      position: absolute;
+      bottom: 125px;
+      right: 42px;
+      width: 60px;
+      height: 60px;
+      background: rgba(245, 158, 11, 0.5);
+      backdrop-filter: blur(5px);
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      border-radius: 50%;
+      color: white;
+      font-size: 1.2rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      z-index: 15;
+      box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+      user-select: none;
+    }
+    #run-btn.active { background: rgba(245, 158, 11, 0.9); border-color: #fef08a; }
+
+    /* Prompt Interativo do Bondinho */
+    #cable-car-prompt {
+      position: absolute;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.92);
+      border: 2px solid #38bdf8;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      border-radius: 16px;
+      padding: 12px 22px;
+      color: white;
+      text-align: center;
+      z-index: 25;
+      display: none;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    #cable-car-prompt:hover { transform: translateX(-50%) scale(1.03); }
+    #cable-car-prompt strong { color: #38bdf8; font-size: 1.05rem; display: block; margin-bottom: 2px; }
+    #cable-car-prompt span { font-size: 0.82rem; color: #94a3b8; }
+
+    /* Cutscene / Transição do Bondinho */
+    #cable-car-cutscene {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.98) 100%);
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 45;
+      color: white;
+      text-align: center;
+    }
+    .gondola-climb-icon {
+      font-size: 3.5rem;
+      animation: climbAnim 1.8s ease-in-out infinite alternate;
+      display: inline-block;
+      margin-bottom: 15px;
+    }
+    @keyframes climbAnim {
+      0% { transform: translateY(10px) rotate(-4deg); }
+      100% { transform: translateY(-20px) rotate(4deg); }
+    }
+
+    /* Modais elegantes (Lojinha e Inventário) */
+    .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(8px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 40;
+    }
+    .modal-card {
+      background: rgba(30, 41, 59, 0.96);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 20px;
+      padding: 24px;
+      width: 90%;
+      max-width: 520px;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+      color: white;
+      box-sizing: border-box;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .modal-header h2 { margin: 0; color: #38bdf8; font-size: 1.3rem; }
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 1.4rem;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+    .close-btn:hover { color: white; background: rgba(255,255,255,0.1); }
+    .shop-balance {
+      font-weight: bold;
+      color: #facc15;
+      margin-bottom: 14px;
+      font-size: 0.95rem;
+    }
+    .tab-nav {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .tab-btn {
+      background: rgba(51, 65, 85, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #cbd5e1;
+      padding: 8px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.82rem;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-btn.active, .tab-btn:hover {
+      background: #0284c7;
+      color: white;
+      border-color: #38bdf8;
+    }
+    .items-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+      gap: 12px;
+    }
+    .item-card {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 12px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s;
+    }
+    .item-card.equipped {
+      border-color: #22c55e;
+      background: rgba(34, 197, 94, 0.12);
+    }
+    .item-icon { font-size: 2.2rem; margin-bottom: 6px; }
+    .item-title { font-weight: bold; font-size: 0.82rem; color: #f8fafc; margin-bottom: 4px; }
+    .item-desc { font-size: 0.68rem; color: #94a3b8; margin-bottom: 10px; flex-grow: 1; line-height: 1.2; }
+    .item-btn {
+      border: none;
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 0.75rem;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.2s;
+    }
+    .item-btn:hover { opacity: 0.9; }
+    .btn-buy { background: #eab308; color: #0f172a; }
+    .btn-equip { background: #0284c7; color: white; }
+    .btn-equipped { background: #22c55e; color: white; cursor: default; }
+
+    /* Resumo de itens equipados */
+    .equipped-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-size: 0.8rem;
+    }
+    .equipped-summary strong { color: #38bdf8; }
   </style>
 </head>
 <body>
 
   <!-- Badge com o Número da Versão Ativa -->
-  <div id="version-badge">v1.6.0-STABLE</div>
+  <div id="version-badge">v1.7.0-STABLE</div>
 
   <!-- Tela de Login -->
   <div id="login-screen" class="screen">
     <div class="card">
       <h1>❄️ Snow Slide</h1>
-      <p>Digite seu apelido para entrar</p>
+      <p>Digite seu apelido para entrar na Vila Alpina</p>
       <input type="text" id="username-input" placeholder="Seu apelido..." autocomplete="off">
-      <button id="login-btn" class="btn">Entrar</button>
+      <button id="login-btn" class="btn">Entrar na Vila</button>
       <button id="quick-login-btn" class="btn secondary">⚡ Login Rápido</button>
     </div>
   </div>
 
-  <!-- UI Minimalista do Hub -->
+  <!-- UI do Hub -->
   <div id="hub-ui">
-    <h2>🏔️ Rodoviária Alpina</h2>
+    <h2>🏔️ Vila Alpina</h2>
     <span class="stat">💰 <span id="currency-val">1250</span> pts</span>
-    <button id="board-shop-btn" class="mini-btn">🛒 Trocar Veículo</button>
-    <button id="cable-car-btn" class="mini-btn" style="background:#0284c7;">🚠 Iniciar Corrida</button>
+    <button id="open-shop-btn" class="mini-btn">🛒 Lojinha Alpina</button>
+    <button id="open-inventory-btn" class="mini-btn" style="background:#475569;">🎒 Meus Equipamentos</button>
+    <div style="margin-top: 10px; font-size: 0.72rem; color: #94a3b8; line-height: 1.3;">
+      🚶 <strong>Andar:</strong> W,A,S,D / Analógico<br>
+      🏃 <strong>Correr:</strong> Segure Shift<br>
+      🚠 Suba de <strong>Bondinho</strong> para correr!
+    </div>
   </div>
 
   <!-- HUD de Corrida -->
@@ -243,15 +449,70 @@
     <span style="margin-left: 12px; font-size: 0.9rem; color: #38bdf8;">⚡ <span id="speed-val">0</span> km/h</span>
   </div>
 
-  <button id="back-hub-btn">⬅ Voltar ao Hub</button>
+  <button id="back-hub-btn">⬅ Voltar à Vila</button>
 
-  <!-- Analógico Virtual & Botão de Pulo -->
+  <!-- Prompt de Interação do Bondinho -->
+  <div id="cable-car-prompt">
+    <strong>🚠 Subir no Bondinho [Pressione E]</strong>
+    <span>Ir ao pico da montanha para iniciar a descida de corrida</span>
+  </div>
+
+  <!-- Cutscene do Bondinho Subindo o Morro -->
+  <div id="cable-car-cutscene">
+    <div class="gondola-climb-icon">🚠</div>
+    <h2 style="color: #38bdf8; margin: 0 0 8px 0; font-size: 1.5rem;">Subindo ao Topo da Montanha...</h2>
+    <p style="color: #94a3b8; font-size: 0.9rem; max-width: 320px;">O teleférico está levando você e seu trenó ao pico mais alto para a grande descida!</p>
+  </div>
+
+  <!-- Modal da Lojinha Alpina -->
+  <div id="shop-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>🛒 Lojinha Alpina</h2>
+        <button class="close-btn" id="close-shop-btn">✕</button>
+      </div>
+      <div class="shop-balance">💰 Suas Moedas: <span id="shop-coins-val">1250</span> pts</div>
+      <div class="tab-nav">
+        <button class="tab-btn active" data-shop-tab="sleds">🛷 Veículos</button>
+        <button class="tab-btn" data-shop-tab="hats">🎩 Chapéus</button>
+        <button class="tab-btn" data-shop-tab="scarves">🧣 Cachecóis</button>
+        <button class="tab-btn" data-shop-tab="goggles">🥽 Óculos</button>
+      </div>
+      <div id="shop-items-container" class="items-grid"></div>
+    </div>
+  </div>
+
+  <!-- Modal de Meus Equipamentos / Inventário -->
+  <div id="inventory-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>🎒 Meus Equipamentos</h2>
+        <button class="close-btn" id="close-inv-btn">✕</button>
+      </div>
+      <div class="equipped-summary">
+        <div>🛷 Veículo: <strong id="summary-sled">Trenó de Madeira</strong></div>
+        <div>🎩 Chapéu: <strong id="summary-hat">Gorro Vermelho</strong></div>
+        <div>🧣 Cachecol: <strong id="summary-scarf">Verde Esmeralda</strong></div>
+        <div>🥽 Óculos: <strong id="summary-goggles">Nenhum</strong></div>
+      </div>
+      <div class="tab-nav">
+        <button class="tab-btn active" data-inv-tab="sleds">🛷 Veículos</button>
+        <button class="tab-btn" data-inv-tab="hats">🎩 Chapéus</button>
+        <button class="tab-btn" data-inv-tab="scarves">🧣 Cachecóis</button>
+        <button class="tab-btn" data-inv-tab="goggles">🥽 Óculos</button>
+      </div>
+      <div id="inv-items-container" class="items-grid"></div>
+    </div>
+  </div>
+
+  <!-- Analógico Virtual, Pulo e Corrida -->
   <div id="joystick-ui">
     <div id="joystick-base">
       <div id="joystick-knob"></div>
     </div>
   </div>
   <div id="jump-btn">🔼</div>
+  <div id="run-btn">🏃</div>
 
   <div id="app"></div>
   <script type="module" src="/src/main.ts"></script>

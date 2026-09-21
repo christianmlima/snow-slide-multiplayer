@@ -2,7 +2,40 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import { GameState } from '@snow-slide/shared';
 
-const GAME_VERSION = "v1.6.0-STABLE";
+const GAME_VERSION = "v1.7.0-STABLE";
+
+interface ShopItem {
+  id: string;
+  name: string;
+  category: 'sleds' | 'hats' | 'scarves' | 'goggles';
+  price: number;
+  icon: string;
+  desc: string;
+}
+
+const SHOP_CATALOG: ShopItem[] = [
+  // Veículos
+  { id: 'sled_wood', name: 'Trenó de Madeira', category: 'sleds', price: 0, icon: '🛷', desc: 'Clássico trenó alpino com patins de aço polido.' },
+  { id: 'board_cyan', name: 'Snowboard Pro Cyan', category: 'sleds', price: 350, icon: '🏂', desc: 'Prancha de alta performance para manobras ágeis.' },
+  { id: 'sled_gold', name: 'Trenó Imperial Ouro', category: 'sleds', price: 800, icon: '👑', desc: 'Forjado em ouro alpino com estofado carmesim.' },
+  { id: 'board_lava', name: 'Snowboard Vulcão', category: 'sleds', price: 500, icon: '🔥', desc: 'Prancha vulcânica com bordas incandescentes.' },
+
+  // Chapéus
+  { id: 'hat_red', name: 'Gorro Vermelho Pom-Pom', category: 'hats', price: 0, icon: '🔴', desc: 'O clássico gorro de lã quentinho com pom-pom.' },
+  { id: 'hat_blue', name: 'Gorro Azul Nevasca', category: 'hats', price: 150, icon: '🔵', desc: 'Gorro polar reforçado para ventos frios.' },
+  { id: 'hat_top', name: 'Cartola de Inverno', category: 'hats', price: 400, icon: '🎩', desc: 'Elegância aristocrática para o pinguim refinado.' },
+  { id: 'hat_crown', name: 'Coroa Glacial', category: 'hats', price: 750, icon: '👑', desc: 'Digna do verdadeiro rei das montanhas nevadas.' },
+
+  // Cachecóis
+  { id: 'scarf_green', name: 'Cachecol Verde Esmeralda', category: 'scarves', price: 0, icon: '🧣', desc: 'Lã macia com cauda esvoaçante ao vento.' },
+  { id: 'scarf_red', name: 'Cachecol Vermelho Listrado', category: 'scarves', price: 180, icon: '🧣', desc: 'Listras festivas visíveis em qualquer nevasca.' },
+  { id: 'scarf_gold', name: 'Cachecol Seda Dourada', category: 'scarves', price: 380, icon: '✨', desc: 'Tecido nobre que reluz ao brilho do sol alpino.' },
+
+  // Óculos de Esqui
+  { id: 'goggles_none', name: 'Sem Óculos', category: 'goggles', price: 0, icon: '👀', desc: 'Olhos livres para sentir a brisa da neve.' },
+  { id: 'goggles_orange', name: 'Óculos Laranja Polar', category: 'goggles', price: 250, icon: '🥽', desc: 'Lentes âmbar de alta definição com proteção UV.' },
+  { id: 'goggles_cyan', name: 'Óculos Neon Ciano', category: 'goggles', price: 380, icon: '🥽', desc: 'Visor espelhado futurista contra reflexos de gelo.' }
+];
 
 class SnowSlideTPSMasterEngine {
   private client!: Client;
@@ -22,21 +55,48 @@ class SnowSlideTPSMasterEngine {
   private isJumping = false;
   private jumpVelY = 0;
   
-  private currentVehicle = 'sled';
+  // Customizações e Equipamentos
   private currency = 1250;
   private score = 0;
-  
+  private equipped = {
+    vehicle: 'sled_wood',
+    hat: 'hat_red',
+    scarf: 'scarf_green',
+    goggles: 'goggles_none'
+  };
+  private inventory: Set<string> = new Set(['sled_wood', 'hat_red', 'scarf_green', 'goggles_none']);
+
+  // Membros do Pinguim para Animação Procedural
+  private penguinTorso!: THREE.Group;
+  private penguinHead!: THREE.Group;
+  private penguinFootL!: THREE.Mesh;
+  private penguinFootR!: THREE.Mesh;
+  private penguinWingL!: THREE.Mesh;
+  private penguinWingR!: THREE.Mesh;
+  private penguinScarfTail!: THREE.Mesh;
+  private walkTime = 0;
+  private isRunning = false;
+
+  // Interação do Bondinho (Cable Car)
+  private cableCarStationPos = new THREE.Vector3(22, 0, -18);
+  private nearCableCar = false;
+  private gondolaMesh!: THREE.Group;
+
+  // Fogueira no Hub
+  private bonfireLight!: THREE.PointLight;
+  private bonfireEmbers!: THREE.Points;
+  private bonfireEmberData: { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number }[] = [];
+
+  // Pista de Corrida & Obstáculos
   private otherPlayers: Map<string, THREE.Group> = new Map();
   private obstacles: { mesh: THREE.Object3D; x: number; z: number; radius: number }[] = [];
   private gates: { mesh: THREE.Object3D; x: number; z: number; passed: boolean }[] = [];
   private ramps: { mesh: THREE.Object3D; x: number; z: number }[] = [];
-  
-  // Sistema Avançado de Rastro na Neve (Estilo Sledding Game)
+
+  // Rastro na Neve e Partículas
   private skidMarks: { mesh: THREE.Mesh; createdAt: number }[] = [];
   private prevTrailLeft: { x: number; z: number } | null = null;
   private prevTrailRight: { x: number; z: number } | null = null;
-
-  // Sistema de Spray e Poeira de Neve
   private snowParticles!: THREE.Points;
   private snowSprayPoints!: THREE.Points;
   private sprayData: { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; maxLife: number }[] = [];
@@ -63,11 +123,15 @@ class SnowSlideTPSMasterEngine {
   private keyS = false;
   private keyA = false;
   private keyD = false;
+  private keyShift = false;
 
   constructor() {
     this.initEngine();
   }
 
+  // =========================================================================
+  // SISTEMA DE PARTÍCULAS E RASTRO
+  // =========================================================================
   private createSnowParticles() {
     const count = 750;
     const geometry = new THREE.BufferGeometry();
@@ -94,7 +158,7 @@ class SnowSlideTPSMasterEngine {
     
     const mat = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 0.55,
+      size: 0.52,
       transparent: true,
       opacity: 0.82
     });
@@ -112,11 +176,9 @@ class SnowSlideTPSMasterEngine {
     for (let i = 0; i < this.sprayData.length; i++) {
       const p = this.sprayData[i];
       if (p.life <= 0) {
-        // Ejetar a partir da cauda e laterais do trenó
         p.x = this.playerPosX + (Math.random() - 0.5) * 0.7;
         p.y = this.playerPosY + 0.08;
         p.z = this.playerPosZ - 0.85;
-        // Spray lateral forte para o lado oposto da curva (carving)
         p.vx = (Math.random() - 0.5) * 0.15 - lateralBoost * 0.38;
         p.vy = 0.06 + Math.random() * 0.09;
         p.vz = -0.15 - Math.random() * 0.18;
@@ -139,7 +201,7 @@ class SnowSlideTPSMasterEngine {
         p.x += p.vx;
         p.y += p.vy;
         p.z += p.vz;
-        p.vy -= 0.0035; // gravidade no pó de neve
+        p.vy -= 0.0035;
         p.life--;
         arr[i * 3] = p.x;
         arr[i * 3 + 1] = p.y;
@@ -151,11 +213,8 @@ class SnowSlideTPSMasterEngine {
     posAttr.needsUpdate = true;
   }
 
-  // =========================================================================
-  // SISTEMA DE RASTRO DUPLO CONTÍNUO NA NEVE (ESTILO SLEDDING GAME)
-  // =========================================================================
   private addContinuousSnowTrail(x: number, y: number, z: number, rotY: number) {
-    const isSled = this.currentVehicle === 'sled';
+    const isSled = this.equipped.vehicle.startsWith('sled');
     const trackMat = new THREE.MeshBasicMaterial({
       color: 0x93c5fd,
       transparent: true,
@@ -166,8 +225,20 @@ class SnowSlideTPSMasterEngine {
     const cosH = Math.cos(rotY);
     const sinH = Math.sin(rotY);
 
-    if (isSled) {
-      // Patim Esquerdo e Patim Direito (Trilhas paralelas perfeitas)
+    if (this.currentScene === 'HUB') {
+      // No Hub (a pé): pegadas leves de pinguim
+      const footOffset = 0.22;
+      const geo = new THREE.PlaneGeometry(0.18, 0.26);
+      const footprint = new THREE.Mesh(geo, trackMat);
+      footprint.rotation.x = -Math.PI / 2;
+      footprint.rotation.z = -rotY;
+      const footSide = Math.sin(this.walkTime) > 0 ? 1 : -1;
+      footprint.position.set(x + cosH * footOffset * footSide, y + 0.02, z - sinH * footOffset * footSide);
+      this.scene.add(footprint);
+      this.skidMarks.push({ mesh: footprint, createdAt: Date.now() });
+
+    } else if (isSled) {
+      // Na Corrida com Trenó: rastro duplo de lâminas
       const offset = 0.46;
       const currL = { x: x - cosH * offset, z: z + sinH * offset };
       const currR = { x: x + cosH * offset, z: z - sinH * offset };
@@ -207,7 +278,7 @@ class SnowSlideTPSMasterEngine {
         this.prevTrailRight = currR;
       }
     } else {
-      // Prancha de Snowboard: rastro contínuo de carving central
+      // Na Corrida com Snowboard: sulco central de carving
       if (this.prevTrailLeft) {
         const dx = x - this.prevTrailLeft.x;
         const dz = z - this.prevTrailLeft.z;
@@ -229,7 +300,6 @@ class SnowSlideTPSMasterEngine {
       }
     }
 
-    // Gerenciamento e reciclagem de marcas para 60 FPS estáveis
     while (this.skidMarks.length > 350) {
       const old = this.skidMarks.shift()!;
       this.scene.remove(old.mesh);
@@ -250,7 +320,7 @@ class SnowSlideTPSMasterEngine {
   }
 
   // =========================================================================
-  // MODELAGEM VISUAL: CENÁRIO ALPINO
+  // MODELAGEM VISUAL: CENÁRIO ALPINO (ÁRVORES, ROCHAS, PORTAIS, RAMPAS, MONTANHAS)
   // =========================================================================
   private createSnowyPineTree(): THREE.Group {
     const group = new THREE.Group();
@@ -367,251 +437,596 @@ class SnowSlideTPSMasterEngine {
   }
 
   // =========================================================================
-  // MODELAGEM VISUAL: PENGUIN & SLED AVANÇADOS (ESTILO SLEDDING GAME)
+  // MODELAGEM VISUAL: PENGUIN, ACESSÓRIOS & VEÍCULOS
   // =========================================================================
-  private createDetailedPenguin(charType: string): THREE.Group {
-    const group = new THREE.Group();
-    const bodyColor = charType === 'penguin' ? 0x0f172a : 0xf59e0b;
-    const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.4 });
+  private createDetailedPenguin(): THREE.Group {
+    const root = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
     const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
     const orangeMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
 
-    // 1. Corpo principal
+    // Grupo do Torso (Balança no waddle)
+    this.penguinTorso = new THREE.Group();
+    
+    // Corpo
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.44, 0.65, 14, 14), bodyMat);
     body.position.y = 0.68;
     body.castShadow = true;
-    group.add(body);
+    this.penguinTorso.add(body);
 
-    // 2. Barriguinha fofa branca
+    // Barriga branca
     const belly = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14), whiteMat);
     belly.position.set(0, 0.64, 0.24);
     belly.scale.set(0.82, 1.05, 0.5);
-    group.add(belly);
+    this.penguinTorso.add(belly);
 
-    // 3. Patas laranjas apoiadas
-    const footL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.38), orangeMat);
-    footL.position.set(-0.24, 0.18, 0.35);
-    footL.rotation.y = 0.2;
-    const footR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.38), orangeMat);
-    footR.position.set(0.24, 0.18, 0.35);
-    footR.rotation.y = -0.2;
-    group.add(footL, footR);
+    // Cabeça
+    this.penguinHead = new THREE.Group();
+    this.penguinHead.position.y = 1.22;
 
-    // 4. Asinhas / Braços (segurando para o equilíbrio)
-    const wingL = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 8), bodyMat);
-    wingL.position.set(-0.50, 0.66, 0.02);
-    wingL.rotation.set(-0.2, 0, 0.42);
-    wingL.scale.set(1.1, 1.0, 0.4);
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16), bodyMat);
+    headMesh.castShadow = true;
+    this.penguinHead.add(headMesh);
 
-    const wingR = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 8), bodyMat);
-    wingR.position.set(0.50, 0.66, 0.02);
-    wingR.rotation.set(-0.2, 0, -0.42);
-    wingR.scale.set(1.1, 1.0, 0.4);
-    group.add(wingL, wingR);
-
-    // 5. Cabeça
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16), bodyMat);
-    head.position.y = 1.22;
-    head.castShadow = true;
-    group.add(head);
-
-    // 6. Bico pontiagudo laranja
+    // Bico laranja
     const beak = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.32, 8), orangeMat);
     beak.rotation.x = Math.PI / 2;
-    beak.position.set(0, 1.18, 0.44);
-    group.add(beak);
+    beak.position.set(0, -0.04, 0.44);
+    this.penguinHead.add(beak);
 
-    // 7. Olhos expressivos com brilho de desenho animado
+    // Olhos com pupilas e brilho
     const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
     const pupilMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
     const glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), eyeMat);
-    eyeL.position.set(-0.13, 1.28, 0.30);
-    const pupilL = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), pupilMat);
-    pupilL.position.set(-0.13, 1.28, 0.36);
-    const glintL = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), glintMat);
-    glintL.position.set(-0.11, 1.30, 0.39);
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), eyeMat);
+      eye.position.set(side * 0.13, 0.06, 0.30);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), pupilMat);
+      pupil.position.set(side * 0.13, 0.06, 0.36);
+      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), glintMat);
+      glint.position.set(side * 0.11 + 0.02, 0.08, 0.39);
+      this.penguinHead.add(eye, pupil, glint);
 
-    const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), eyeMat);
-    eyeR.position.set(0.13, 1.28, 0.30);
-    const pupilR = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), pupilMat);
-    pupilR.position.set(0.13, 1.28, 0.36);
-    const glintR = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), glintMat);
-    glintR.position.set(0.15, 1.30, 0.39);
+      const blush = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.08), new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.65 }));
+      blush.position.set(side * 0.24, -0.04, 0.28);
+      blush.rotation.y = side * 0.3;
+      this.penguinHead.add(blush);
+    }
 
-    group.add(eyeL, pupilL, glintL, eyeR, pupilR, glintR);
+    // ACESSÓRIO: Chapéu / Gorro Equipado
+    this.attachEquippedHat(this.penguinHead);
 
-    // 8. Bochechinhas rosadas
-    const blushMat = new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.65 });
-    const bL = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.08), blushMat);
-    bL.position.set(-0.24, 1.18, 0.28);
-    bL.rotation.y = -0.3;
-    const bR = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.08), blushMat);
-    bR.position.set(0.24, 1.18, 0.28);
-    bR.rotation.y = 0.3;
-    group.add(bL, bR);
+    // ACESSÓRIO: Óculos de Esqui Equipados
+    this.attachEquippedGoggles(this.penguinHead);
 
-    // 9. Gorro de inverno vermelho com pom-pom (Ícone Sledding Game)
-    const hatMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 });
-    const hatBrimMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.8 });
-    const pomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+    this.penguinTorso.add(this.penguinHead);
 
-    const hatDome = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), hatMat);
-    hatDome.position.y = 1.35;
-    const hatBrim = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.07, 8, 20), hatBrimMat);
-    hatBrim.rotation.x = Math.PI / 2;
-    hatBrim.position.y = 1.36;
-    const pomPom = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), pomMat);
-    pomPom.position.set(0, 1.76, -0.06);
-    group.add(hatDome, hatBrim, pomPom);
+    // ACESSÓRIO: Cachecol Equipado
+    this.attachEquippedScarf(this.penguinTorso);
 
-    // 10. Cachecol verde esmeralda com ponta ao vento
-    const scarfMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.7 });
+    // Asas / Nadadeiras articuladas
+    this.penguinWingL = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 8), bodyMat);
+    this.penguinWingL.position.set(-0.50, 0.66, 0.02);
+    this.penguinWingL.rotation.set(-0.2, 0, 0.42);
+    this.penguinWingL.scale.set(1.1, 1.0, 0.4);
+
+    this.penguinWingR = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 8), bodyMat);
+    this.penguinWingR.position.set(0.50, 0.66, 0.02);
+    this.penguinWingR.rotation.set(-0.2, 0, -0.42);
+    this.penguinWingR.scale.set(1.1, 1.0, 0.4);
+
+    this.penguinTorso.add(this.penguinWingL, this.penguinWingR);
+    root.add(this.penguinTorso);
+
+    // Patas articuladas para caminhar
+    this.penguinFootL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.38), orangeMat);
+    this.penguinFootL.position.set(-0.24, 0.06, 0.12);
+    this.penguinFootL.castShadow = true;
+
+    this.penguinFootR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.38), orangeMat);
+    this.penguinFootR.position.set(0.24, 0.06, 0.12);
+    this.penguinFootR.castShadow = true;
+
+    root.add(this.penguinFootL, this.penguinFootR);
+
+    return root;
+  }
+
+  private attachEquippedHat(head: THREE.Group) {
+    const hatId = this.equipped.hat;
+    if (hatId === 'hat_red' || hatId === 'hat_blue') {
+      const isRed = hatId === 'hat_red';
+      const hatMat = new THREE.MeshStandardMaterial({ color: isRed ? 0xdc2626 : 0x0284c7, roughness: 0.6 });
+      const brimMat = new THREE.MeshStandardMaterial({ color: isRed ? 0xb91c1c : 0x0369a1, roughness: 0.8 });
+      const pomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), hatMat);
+      dome.position.y = 0.13;
+      const brim = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.07, 8, 20), brimMat);
+      brim.rotation.x = Math.PI / 2;
+      brim.position.y = 0.14;
+      const pom = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), pomMat);
+      pom.position.set(0, 0.54, -0.06);
+      head.add(dome, brim, pom);
+
+    } else if (hatId === 'hat_top') {
+      const hatMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
+      const ribbonMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.04, 16), hatMat);
+      brim.position.y = 0.34;
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.48, 16), hatMat);
+      crown.position.y = 0.58;
+      const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.345, 0.345, 0.10, 16), ribbonMat);
+      ribbon.position.y = 0.41;
+      head.add(brim, crown, ribbon);
+
+    } else if (hatId === 'hat_crown') {
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.25 });
+      const gemMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.1 });
+
+      const circlet = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.38, 0.18, 16, 1, true), goldMat);
+      circlet.position.y = 0.38;
+      head.add(circlet);
+
+      for (let i = 0; i < 5; i++) {
+        const ang = (i / 5) * Math.PI * 2;
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 5), goldMat);
+        spike.position.set(Math.cos(ang) * 0.36, 0.54, Math.sin(ang) * 0.36);
+        const gem = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), gemMat);
+        gem.position.set(Math.cos(ang) * 0.38, 0.42, Math.sin(ang) * 0.38);
+        head.add(spike, gem);
+      }
+    }
+  }
+
+  private attachEquippedGoggles(head: THREE.Group) {
+    const gId = this.equipped.goggles;
+    if (gId === 'goggles_none') return;
+
+    const lensColor = gId === 'goggles_orange' ? 0xf97316 : 0x38bdf8;
+    const lensMat = new THREE.MeshStandardMaterial({ color: lensColor, metalness: 0.7, roughness: 0.2, transparent: true, opacity: 0.88 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.6 });
+    const strapMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.16, 0.12), lensMat);
+    visor.position.set(0, 0.08, 0.35);
+
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.20, 0.06), frameMat);
+    frame.position.set(0, 0.08, 0.33);
+
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.04, 6, 20), strapMat);
+    strap.rotation.x = Math.PI / 2;
+    strap.position.y = 0.08;
+
+    head.add(visor, frame, strap);
+  }
+
+  private attachEquippedScarf(torso: THREE.Group) {
+    const sId = this.equipped.scarf;
+    const color = sId === 'scarf_green' ? 0x16a34a : (sId === 'scarf_red' ? 0xdc2626 : 0xfacc15);
+    const scarfMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+
     const scarfRing = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.09, 8, 20), scarfMat);
     scarfRing.rotation.x = Math.PI / 2;
     scarfRing.position.y = 0.98;
-    const scarfTail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.55), scarfMat);
-    scarfTail.position.set(0.26, 0.94, -0.38);
-    scarfTail.rotation.set(-0.35, 0.25, 0);
-    group.add(scarfRing, scarfTail);
 
-    return group;
+    this.penguinScarfTail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.55), scarfMat);
+    this.penguinScarfTail.position.set(0.26, 0.94, -0.38);
+    this.penguinScarfTail.rotation.set(-0.35, 0.25, 0);
+
+    torso.add(scarfRing, this.penguinScarfTail);
   }
 
-  private createDetailedSled(): THREE.Group {
+  // Modelagem dos Veículos para a Corrida
+  private createVehicleMesh(vType: string): THREE.Group {
     const group = new THREE.Group();
-    const steelMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.85, roughness: 0.2 });
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.55 });
-    const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 });
-    const ropeMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.8 });
+    const isSled = vType.startsWith('sled');
 
-    // 1. Patins de Metal Curvados (Runners)
-    // Patim Esquerdo
-    const runnerL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 2.6), steelMat);
-    runnerL.position.set(-0.46, 0.05, 0);
-    runnerL.castShadow = true;
+    if (isSled) {
+      const isGold = vType === 'sled_gold';
+      const steelMat = new THREE.MeshStandardMaterial({
+        color: isGold ? 0xfacc15 : 0x94a3b8,
+        metalness: 0.85,
+        roughness: 0.2
+      });
+      const woodMat = new THREE.MeshStandardMaterial({
+        color: isGold ? 0x7c2d12 : 0xb45309,
+        roughness: 0.55
+      });
+      const darkWoodMat = new THREE.MeshStandardMaterial({
+        color: isGold ? 0x451a03 : 0x78350f,
+        roughness: 0.7
+      });
+      const ropeMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.8 });
 
-    const tipL = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 14, Math.PI * 0.85), steelMat);
-    tipL.rotation.y = Math.PI / 2;
-    tipL.position.set(-0.46, 0.22, 1.32);
+      // Lâminas curvadas
+      for (const side of [-0.46, 0.46]) {
+        const runner = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 2.6), steelMat);
+        runner.position.set(side, 0.05, 0);
+        runner.castShadow = true;
 
-    // Patim Direito
-    const runnerR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 2.6), steelMat);
-    runnerR.position.set(0.46, 0.05, 0);
-    runnerR.castShadow = true;
+        const tip = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 14, Math.PI * 0.85), steelMat);
+        tip.rotation.y = Math.PI / 2;
+        tip.position.set(side, 0.22, 1.32);
+        group.add(runner, tip);
 
-    const tipR = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 14, Math.PI * 0.85), steelMat);
-    tipR.rotation.y = Math.PI / 2;
-    tipR.position.set(0.46, 0.22, 1.32);
+        for (const sz of [-0.7, 0.2, 0.9]) {
+          const s = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.24, 6), steelMat);
+          s.position.set(side, 0.17, sz);
+          group.add(s);
+        }
+      }
 
-    group.add(runnerL, tipL, runnerR, tipR);
+      // Tábuas de madeira
+      for (const px of [-0.34, -0.11, 0.11, 0.34]) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.05, 2.25), woodMat);
+        plank.position.set(px, 0.29, -0.05);
+        plank.castShadow = true;
+        group.add(plank);
+      }
 
-    // 2. Suportes verticais (Stanchions)
-    const stanchionPositions = [
-      [-0.46, -0.7], [-0.46, 0.2], [-0.46, 0.9],
-      [0.46, -0.7], [0.46, 0.2], [0.46, 0.9]
-    ];
-    for (const [sx, sz] of stanchionPositions) {
-      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.24, 6), steelMat);
-      s.position.set(sx, 0.17, sz);
-      group.add(s);
+      const crossF = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.06, 0.12), darkWoodMat);
+      crossF.position.set(0, 0.28, 0.85);
+      const crossB = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.06, 0.12), darkWoodMat);
+      crossB.position.set(0, 0.28, -0.75);
+      group.add(crossF, crossB);
+
+      const handleBar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.92, 8), darkWoodMat);
+      handleBar.rotation.z = Math.PI / 2;
+      handleBar.position.set(0, 0.42, 1.25);
+
+      const ropeL = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.6, 6), ropeMat);
+      ropeL.position.set(-0.35, 0.48, 0.95);
+      ropeL.rotation.x = 0.55;
+      const ropeR = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.6, 6), ropeMat);
+      ropeR.position.set(0.35, 0.48, 0.95);
+      ropeR.rotation.x = 0.55;
+
+      group.add(handleBar, ropeL, ropeR);
+
+    } else {
+      // Snowboard
+      const isLava = vType === 'board_lava';
+      const boardMat = new THREE.MeshStandardMaterial({
+        color: isLava ? 0x0f172a : 0x0284c7,
+        roughness: 0.3
+      });
+      const stripeMat = new THREE.MeshStandardMaterial({
+        color: isLava ? 0xef4444 : 0xfacc15,
+        roughness: 0.4
+      });
+      const bindingMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 });
+      const edgeMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 });
+
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.10, 2.3), boardMat);
+      deck.position.y = 0.08;
+      deck.castShadow = true;
+
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.04, 2.34), edgeMat);
+      edge.position.y = 0.04;
+
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 0.35), boardMat);
+      nose.position.set(0, 0.16, 1.25);
+      nose.rotation.x = -0.35;
+
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 0.35), boardMat);
+      tail.position.set(0, 0.16, -1.25);
+      tail.rotation.x = 0.35;
+
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.11, 2.2), stripeMat);
+      stripe.position.y = 0.08;
+
+      const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.28), bindingMat);
+      b1.position.set(0, 0.16, 0.4);
+      const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.28), bindingMat);
+      b2.position.set(0, 0.16, -0.4);
+
+      group.add(deck, edge, nose, tail, stripe, b1, b2);
     }
 
-    // 3. Pranchas de Madeira do Deck (4 tábuas longitudinais)
-    const plankX = [-0.34, -0.11, 0.11, 0.34];
-    for (const px of plankX) {
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.05, 2.25), woodMat);
-      plank.position.set(px, 0.29, -0.05);
-      plank.castShadow = true;
-      group.add(plank);
+    return group;
+  }
+
+  // Avatar completo montado: a pé no Hub, montado no veículo na corrida
+  private createAvatarAssembly(): THREE.Group {
+    const group = new THREE.Group();
+
+    if (this.currentScene === 'RACING') {
+      const vehicle = this.createVehicleMesh(this.equipped.vehicle);
+      group.add(vehicle);
+
+      const penguin = this.createDetailedPenguin();
+      penguin.position.y = this.equipped.vehicle.startsWith('sled') ? 0.26 : 0.08;
+      group.add(penguin);
+    } else {
+      // NO HUB: O pinguim caminha a pé diretamente no chão sem carrinho!
+      const penguin = this.createDetailedPenguin();
+      penguin.position.y = 0;
+      group.add(penguin);
     }
-
-    // 4. Travessas de suporte de madeira
-    const crossBarF = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.06, 0.12), darkWoodMat);
-    crossBarF.position.set(0, 0.28, 0.85);
-    const crossBarB = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.06, 0.12), darkWoodMat);
-    crossBarB.position.set(0, 0.28, -0.75);
-    group.add(crossBarF, crossBarB);
-
-    // 5. Barra de Direção Frontal com Corda
-    const handleBar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.92, 8), darkWoodMat);
-    handleBar.rotation.z = Math.PI / 2;
-    handleBar.position.set(0, 0.42, 1.25);
-
-    const ropeL = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.6, 6), ropeMat);
-    ropeL.position.set(-0.35, 0.48, 0.95);
-    ropeL.rotation.x = 0.55;
-    const ropeR = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.6, 6), ropeMat);
-    ropeR.position.set(0.35, 0.48, 0.95);
-    ropeR.rotation.x = 0.55;
-
-    group.add(handleBar, ropeL, ropeR);
-
-    return group;
-  }
-
-  private createDetailedSnowboard(): THREE.Group {
-    const group = new THREE.Group();
-    const boardMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
-    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 });
-    const bindingMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
-    const edgeMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 });
-
-    // Deck curvado nas pontas
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.10, 2.3), boardMat);
-    deck.position.y = 0.08;
-    deck.castShadow = true;
-
-    // Borda metálica
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.04, 2.34), edgeMat);
-    edge.position.y = 0.04;
-
-    // Bico e cauda virados para cima
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 0.35), boardMat);
-    nose.position.set(0, 0.16, 1.25);
-    nose.rotation.x = -0.35;
-
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 0.35), boardMat);
-    tail.position.set(0, 0.16, -1.25);
-    tail.rotation.x = 0.35;
-
-    // Faixa esportiva
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.11, 2.2), stripeMat);
-    stripe.position.y = 0.08;
-
-    // Fixações de bota (Bindings)
-    const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.28), bindingMat);
-    b1.position.set(0, 0.16, 0.4);
-    const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.28), bindingMat);
-    b2.position.set(0, 0.16, -0.4);
-
-    group.add(deck, edge, nose, tail, stripe, b1, b2);
-    return group;
-  }
-
-  private createAvatarMesh(charType: string, vehicleType: string): THREE.Group {
-    const group = new THREE.Group();
-    
-    // 1. Veículo (Trenó Alpino detalhado ou Snowboard)
-    const vehicle = vehicleType === 'sled' ? this.createDetailedSled() : this.createDetailedSnowboard();
-    group.add(vehicle);
-
-    // 2. Personagem Penguin detalhado
-    const penguin = this.createDetailedPenguin(charType);
-    // Se estiver em trenó, senta ligeiramente mais alto no deck
-    penguin.position.y = vehicleType === 'sled' ? 0.26 : 0.08;
-    group.add(penguin);
 
     return group;
   }
 
   private respawnPlayerMesh() {
     if (this.playerGroup) this.scene.remove(this.playerGroup);
-    this.playerGroup = this.createAvatarMesh('penguin', this.currentVehicle);
+    this.playerGroup = this.createAvatarAssembly();
     this.scene.add(this.playerGroup);
   }
 
+  // Animação Procedural dos Membros do Pinguim
+  private animatePenguinWalk(time: number, running: boolean) {
+    if (!this.penguinFootL || !this.penguinFootR || !this.penguinTorso) return;
+
+    const freq = running ? 1.6 : 1.0;
+    const t = time * freq;
+
+    // Patas alternando passos
+    this.penguinFootL.position.z = Math.sin(t) * 0.24;
+    this.penguinFootL.position.y = Math.max(0, Math.cos(t) * 0.14);
+
+    this.penguinFootR.position.z = -Math.sin(t) * 0.24;
+    this.penguinFootR.position.y = Math.max(0, -Math.cos(t) * 0.14);
+
+    // O clássico "Waddle": balanço alegre de corpo de pinguim
+    this.penguinTorso.rotation.z = Math.sin(t) * (running ? 0.20 : 0.14);
+    this.penguinTorso.position.y = Math.abs(Math.sin(t * 2)) * 0.05;
+
+    // Asas balançando suavemente para equilíbrio
+    this.penguinWingL.rotation.z = 0.42 + Math.sin(t) * 0.25;
+    this.penguinWingR.rotation.z = -0.42 + Math.sin(t) * 0.25;
+
+    // Cauda do cachecol esvoaçando
+    if (this.penguinScarfTail) {
+      this.penguinScarfTail.rotation.y = 0.25 + Math.sin(t * 1.5) * 0.25;
+    }
+  }
+
+  private animatePenguinIdle() {
+    if (!this.penguinFootL || !this.penguinFootR || !this.penguinTorso) return;
+
+    this.penguinFootL.position.set(-0.24, 0.06, 0.12);
+    this.penguinFootR.position.set(0.24, 0.06, 0.12);
+    this.penguinTorso.rotation.z = 0;
+    this.penguinTorso.position.y = 0;
+    this.penguinWingL.rotation.set(-0.2, 0, 0.42);
+    this.penguinWingR.rotation.set(-0.2, 0, -0.42);
+  }
+
+  // =========================================================================
+  // CENÁRIO: ESTAÇÃO DO BONDINHO, FOGUEIRA & VILA ALPINA (HUB)
+  // =========================================================================
+  private createCableCarBaseStation(): THREE.Group {
+    const station = new THREE.Group();
+    const timberMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.8 });
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 });
+    const cableMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
+
+    // Plataforma de madeira com degraus
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(16, 1.2, 12), timberMat);
+    deck.position.y = 0.6;
+    deck.receiveShadow = true;
+    station.add(deck);
+
+    // Pilares e Telhado Alpino da Estação
+    for (const [px, pz] of [[-7, -5], [-7, 5], [7, -5], [7, 5]]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 7, 8), timberMat);
+      post.position.set(px, 4.1, pz);
+      post.castShadow = true;
+      station.add(post);
+    }
+
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(13, 4.5, 4), new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.6 }));
+    roof.position.y = 9.2;
+    roof.rotation.y = Math.PI / 4;
+    const roofSnow = new THREE.Mesh(new THREE.ConeGeometry(13.2, 1.2, 4), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 }));
+    roofSnow.position.y = 9.8;
+    roofSnow.rotation.y = Math.PI / 4;
+    station.add(roof, roofSnow);
+
+    // Torre de aço e roldanas do cabo do bondinho
+    const pylon = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 14, 8), metalMat);
+    pylon.position.set(0, 7.6, -1);
+    const pylonArm = new THREE.Mesh(new THREE.BoxGeometry(6, 0.4, 0.6), metalMat);
+    pylonArm.position.set(0, 14.2, -1);
+    station.add(pylon, pylonArm);
+
+    // Cabos de aço que sobem em direção à montanha (Z negativo, Y alto)
+    for (const cx of [-2.4, 2.4]) {
+      const cablePoints = [
+        new THREE.Vector3(cx, 14.2, -1),
+        new THREE.Vector3(cx * 1.5, 95, -280) // Sobe em direção ao pico
+      ];
+      const cableCurve = new THREE.CatmullRomCurve3(cablePoints);
+      const cableGeo = new THREE.TubeGeometry(cableCurve, 20, 0.05, 6, false);
+      const cableMesh = new THREE.Mesh(cableGeo, cableMat);
+      station.add(cableMesh);
+    }
+
+    // Cabine do Bondinho (Gôndola vermelha e amarela suspensa)
+    this.gondolaMesh = new THREE.Group();
+    const gondolaBody = new THREE.Mesh(new THREE.BoxGeometry(4.2, 3.2, 4.6), new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 }));
+    gondolaBody.position.y = 3.6;
+    gondolaBody.castShadow = true;
+
+    const windowMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.8, roughness: 0.1, transparent: true, opacity: 0.85 });
+    const winF = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.4), windowMat);
+    winF.position.set(0, 3.8, 2.32);
+    const winB = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.4), windowMat);
+    winB.position.set(0, 3.8, -2.32);
+    winB.rotation.y = Math.PI;
+
+    const hanger = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 5.2, 6), metalMat);
+    hanger.position.set(0, 7.8, 0);
+    const clamp = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 0.8), metalMat);
+    clamp.position.set(0, 10.4, 0);
+
+    this.gondolaMesh.add(gondolaBody, winF, winB, hanger, clamp);
+    this.gondolaMesh.position.set(2.4, 3.8, -1);
+    station.add(this.gondolaMesh);
+
+    // Placa Luminosa da Estação
+    const boardMat = new THREE.MeshStandardMaterial({ color: 0x0284c7 });
+    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 0.2), boardMat);
+    signBoard.position.set(0, 5.8, 5.8);
+    station.add(signBoard);
+
+    station.position.copy(this.cableCarStationPos);
+    return station;
+  }
+
+  private createBonfire(): THREE.Group {
+    const group = new THREE.Group();
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.8 });
+
+    // Anel de pedras
+    for (let i = 0; i < 12; i++) {
+      const ang = (i / 12) * Math.PI * 2;
+      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.45, 1), stoneMat);
+      stone.position.set(Math.cos(ang) * 1.8, 0.25, Math.sin(ang) * 1.8);
+      group.add(stone);
+    }
+
+    // Troncos cruzados
+    for (let i = 0; i < 4; i++) {
+      const ang = (i / 4) * Math.PI;
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 2.2, 6), woodMat);
+      log.rotation.z = Math.PI / 2;
+      log.rotation.y = ang;
+      log.position.y = 0.35;
+      group.add(log);
+    }
+
+    // Luz aconchegante da fogueira
+    this.bonfireLight = new THREE.PointLight(0xf97316, 2.8, 26);
+    this.bonfireLight.position.set(0, 1.2, 0);
+    this.bonfireLight.castShadow = true;
+    group.add(this.bonfireLight);
+
+    // Brasas / Fagulhas flutuantes
+    const emberCount = 35;
+    const emberGeo = new THREE.BufferGeometry();
+    const pos = new Float32Array(emberCount * 3);
+    for (let i = 0; i < emberCount * 3; i++) pos[i] = 0;
+    emberGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const emberMat = new THREE.PointsMaterial({ color: 0xfbbf24, size: 0.3, transparent: true, opacity: 0.9 });
+    this.bonfireEmbers = new THREE.Points(emberGeo, emberMat);
+    this.bonfireEmberData = [];
+    for (let i = 0; i < emberCount; i++) {
+      this.bonfireEmberData.push({
+        x: (Math.random() - 0.5) * 0.8,
+        y: 0.3 + Math.random() * 1.5,
+        z: (Math.random() - 0.5) * 0.8,
+        vx: (Math.random() - 0.5) * 0.02,
+        vy: 0.03 + Math.random() * 0.04,
+        vz: (Math.random() - 0.5) * 0.02,
+        life: Math.random() * 30
+      });
+    }
+    group.add(this.bonfireEmbers);
+
+    // Bancos de tora ao redor
+    for (let i = 0; i < 3; i++) {
+      const ang = (i / 3) * Math.PI * 1.6 + 0.6;
+      const bench = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 3.4, 8), woodMat);
+      bench.rotation.z = Math.PI / 2;
+      bench.rotation.y = ang + Math.PI / 2;
+      bench.position.set(Math.cos(ang) * 4.2, 0.32, Math.sin(ang) * 4.2);
+      group.add(bench);
+    }
+
+    group.position.set(-6, 0, -2);
+    return group;
+  }
+
+  private createSnowman(): THREE.Group {
+    const group = new THREE.Group();
+    const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.8 });
+    const coalMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+    const carrotMat = new THREE.MeshStandardMaterial({ color: 0xf97316 });
+    const hatMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+
+    const b1 = new THREE.Mesh(new THREE.SphereGeometry(1.0, 12, 12), snowMat);
+    b1.position.y = 0.9;
+    const b2 = new THREE.Mesh(new THREE.SphereGeometry(0.72, 12, 12), snowMat);
+    b2.position.y = 2.1;
+    const b3 = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), snowMat);
+    b3.position.y = 3.1;
+    group.add(b1, b2, b3);
+
+    // Nariz de cenoura
+    const carrot = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.4, 6), carrotMat);
+    carrot.rotation.x = Math.PI / 2;
+    carrot.position.set(0, 3.1, 0.6);
+
+    // Cartola
+    const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.06, 12), hatMat);
+    hatBrim.position.y = 3.52;
+    const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.6, 12), hatMat);
+    hatCrown.position.y = 3.84;
+    group.add(carrot, hatBrim, hatCrown);
+
+    // Olhos de carvão
+    for (const sx of [-0.18, 0.18]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), coalMat);
+      eye.position.set(sx, 3.22, 0.44);
+      group.add(eye);
+    }
+
+    group.position.set(-16, 0, 10);
+    return group;
+  }
+
+  private createChalet(x: number, z: number, rotY: number, isShop = false): THREE.Group {
+    const chalet = new THREE.Group();
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: isShop ? 0x0369a1 : 0x991b1b, roughness: 0.6 });
+    const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 });
+    const windowMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 0.5 });
+
+    // Parede
+    const walls = new THREE.Mesh(new THREE.BoxGeometry(11, 6.5, 10), woodMat);
+    walls.position.y = 3.25;
+    walls.castShadow = true;
+    chalet.add(walls);
+
+    // Telhado alpino inclinado com neve
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(8.5, 4.5, 4), roofMat);
+    roof.position.y = 8.5;
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+
+    const roofSnow = new THREE.Mesh(new THREE.ConeGeometry(8.8, 1.2, 4), snowMat);
+    roofSnow.position.y = 9.2;
+    roofSnow.rotation.y = Math.PI / 4;
+    chalet.add(roof, roofSnow);
+
+    // Janelas iluminadas quentinhas
+    const win1 = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), windowMat);
+    win1.position.set(-2.8, 3.8, 5.02);
+    const win2 = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), windowMat);
+    win2.position.set(2.8, 3.8, 5.02);
+    chalet.add(win1, win2);
+
+    // Placa da Loja se for Chalé da Loja
+    if (isShop) {
+      const signMat = new THREE.MeshStandardMaterial({ color: 0xfacc15 });
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(6.5, 1.4, 0.2), signMat);
+      sign.position.set(0, 5.8, 5.15);
+      chalet.add(sign);
+    }
+
+    chalet.position.set(x, 0, z);
+    chalet.rotation.y = rotY;
+    return chalet;
+  }
+
+  // =========================================================================
+  // CENAS: LOAD HUB & LOAD RACING
+  // =========================================================================
   private initEngine() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xbae6fd);
@@ -653,7 +1068,7 @@ class SnowSlideTPSMasterEngine {
     this.currentScene = 'HUB';
     this.scene.clear();
     this.scene.background = new THREE.Color(0xcbe4f9);
-    this.scene.fog = new THREE.FogExp2(0xcbe4f9, 0.005);
+    this.scene.fog = new THREE.FogExp2(0xcbe4f9, 0.004);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.9);
     this.scene.add(ambient);
@@ -664,51 +1079,42 @@ class SnowSlideTPSMasterEngine {
     this.createSnowSpraySystem();
     this.clearAllSkidMarks();
 
-    const groundGeo = new THREE.PlaneGeometry(300, 300, 32, 32);
+    // Solo da Praça da Vila Alpina
+    const groundGeo = new THREE.PlaneGeometry(350, 350, 32, 32);
     const groundMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.9 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    const cabinGroup = new THREE.Group();
-    const walls = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 10), new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 }));
-    walls.position.y = 3;
-    walls.castShadow = true;
-    cabinGroup.add(walls);
+    // 1. Estação do Bondinho (Teleférico com cabos para o morro)
+    this.scene.add(this.createCableCarBaseStation());
 
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(7, 3.5, 4), new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.5 }));
-    roof.position.y = 7.5;
-    roof.rotation.y = Math.PI / 4;
-    roof.castShadow = true;
-    cabinGroup.add(roof);
-    cabinGroup.position.set(-25, 0, 20);
-    this.scene.add(cabinGroup);
+    // 2. Fogueira acolhedora central (estilo Sledding Game)
+    this.scene.add(this.createBonfire());
 
-    const stationGroup = new THREE.Group();
-    const station = new THREE.Mesh(new THREE.BoxGeometry(12, 7, 14), new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4 }));
-    station.position.y = 3.5;
-    station.castShadow = true;
-    stationGroup.add(station);
+    // 3. Boneco de Neve
+    this.scene.add(this.createSnowman());
 
-    const signPost = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
-    signPost.position.set(0, 2, 7);
-    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(4, 1.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
-    signBoard.position.set(0, 4.2, 7);
-    stationGroup.add(signPost, signBoard);
-    
-    stationGroup.position.set(25, 0, -20);
-    this.scene.add(stationGroup);
+    // 4. Chalés alpinos (incluindo o chalé da Lojinha)
+    this.scene.add(this.createChalet(-26, 18, 0.3)); // Chalé residencial
+    this.scene.add(this.createChalet(-24, -20, -0.4, true)); // Chalé da Lojinha Alpina
+    this.scene.add(this.createChalet(4, 26, Math.PI - 0.2));
 
-    // Floresta alpina ao redor do Hub
-    for (let i = 0; i < 28; i++) {
-      const angle = (i / 28) * Math.PI * 2;
-      const radius = 55 + Math.random() * 35;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      
+    // 5. Montanhas no horizonte do Hub
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const p = this.createMountainPeak(55 + Math.random() * 20, 80 + Math.random() * 40);
+      p.position.set(Math.cos(ang) * 160, 0, Math.sin(ang) * 160);
+      this.scene.add(p);
+    }
+
+    // 6. Pinheiros nevados ao redor
+    for (let i = 0; i < 30; i++) {
+      const angle = (i / 30) * Math.PI * 2;
+      const radius = 45 + Math.random() * 35;
       const tree = this.createSnowyPineTree();
-      tree.position.set(x, 0, z);
+      tree.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
       tree.scale.setScalar(0.85 + Math.random() * 0.35);
       this.scene.add(tree);
     }
@@ -726,12 +1132,14 @@ class SnowSlideTPSMasterEngine {
     this.keyS = false;
     this.keyA = false;
     this.keyD = false;
+    this.keyShift = false;
+    this.isRunning = false;
     this.joystickMoveX = 0;
     this.joystickMoveY = 0;
 
     this.cameraAngleY = 0;
     this.cameraAngleX = 0.35;
-    this.cameraDistance = 10;
+    this.cameraDistance = 9;
 
     this.respawnPlayerMesh();
     this.playerGroup.position.set(0, 0, 0);
@@ -741,6 +1149,7 @@ class SnowSlideTPSMasterEngine {
     document.getElementById('racing-hud')!.style.display = 'none';
     document.getElementById('back-hub-btn')!.style.display = 'none';
     document.getElementById('joystick-ui')!.style.display = 'block';
+    document.getElementById('run-btn')!.style.display = 'flex';
   }
 
   private loadRacingScene() {
@@ -774,7 +1183,7 @@ class SnowSlideTPSMasterEngine {
     track.receiveShadow = true;
     this.scene.add(track);
 
-    // Paredões/encostas de neve nas laterais (efeito cânion/half-pipe alpino)
+    // Paredões/encostas de neve nas laterais (efeito cânion alpino)
     const bermGeo = new THREE.PlaneGeometry(60, 5600, 8, 60);
     const bermMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.95 });
 
@@ -893,7 +1302,6 @@ class SnowSlideTPSMasterEngine {
     this.jumpVelY = 0;
     this.score = 0;
 
-    // Reset de inputs e teclas
     this.keyW = false;
     this.keyS = false;
     this.keyA = false;
@@ -901,7 +1309,6 @@ class SnowSlideTPSMasterEngine {
     this.joystickMoveX = 0;
     this.joystickMoveY = 0;
 
-    // Reset de ângulos de órbita do Hub
     this.cameraAngleY = 0;
     this.cameraAngleX = 0.35;
 
@@ -917,11 +1324,161 @@ class SnowSlideTPSMasterEngine {
     document.getElementById('racing-hud')!.style.display = 'block';
     document.getElementById('back-hub-btn')!.style.display = 'block';
     document.getElementById('joystick-ui')!.style.display = 'block';
+    document.getElementById('run-btn')!.style.display = 'none';
+    document.getElementById('cable-car-prompt')!.style.display = 'none';
   }
 
+  // Animação de subida do Bondinho até o topo da montanha
+  private startCableCarClimb() {
+    const cutscene = document.getElementById('cable-car-cutscene')!;
+    cutscene.style.display = 'flex';
+
+    setTimeout(() => {
+      cutscene.style.display = 'none';
+      this.loadRacingScene();
+    }, 1800);
+  }
+
+  // =========================================================================
+  // SISTEMA DE LOJINHA E INVENTÁRIO (UI + ESTADO)
+  // =========================================================================
+  private updateCoinsDisplay() {
+    const el1 = document.getElementById('currency-val');
+    if (el1) el1.innerText = this.currency.toString();
+    const el2 = document.getElementById('shop-coins-val');
+    if (el2) el2.innerText = this.currency.toString();
+  }
+
+  private renderShop(category: 'sleds' | 'hats' | 'scarves' | 'goggles') {
+    const container = document.getElementById('shop-items-container')!;
+    container.innerHTML = '';
+    const items = SHOP_CATALOG.filter(it => it.category === category);
+
+    for (const it of items) {
+      const card = document.createElement('div');
+      const isOwned = this.inventory.has(it.id);
+      const isEquipped = this.isItemEquipped(it.id, it.category);
+      card.className = 'item-card' + (isEquipped ? ' equipped' : '');
+
+      let buttonHtml = '';
+      if (isEquipped) {
+        buttonHtml = `<button class="item-btn btn-equipped">✓ Equipado</button>`;
+      } else if (isOwned) {
+        buttonHtml = `<button class="item-btn btn-equip" data-equip="${it.id}" data-cat="${it.category}">Equipar</button>`;
+      } else {
+        buttonHtml = `<button class="item-btn btn-buy" data-buy="${it.id}">Comprar (${it.price} pts)</button>`;
+      }
+
+      card.innerHTML = `
+        <div class="item-icon">${it.icon}</div>
+        <div class="item-title">${it.name}</div>
+        <div class="item-desc">${it.desc}</div>
+        ${buttonHtml}
+      `;
+      container.appendChild(card);
+    }
+
+    container.querySelectorAll('[data-buy]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = (e.currentTarget as HTMLElement).getAttribute('data-buy')!;
+        this.buyItem(id);
+      });
+    });
+
+    container.querySelectorAll('[data-equip]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = (e.currentTarget as HTMLElement).getAttribute('data-equip')!;
+        const cat = (e.currentTarget as HTMLElement).getAttribute('data-cat') as any;
+        this.equipItem(id, cat);
+        this.renderShop(category);
+      });
+    });
+  }
+
+  private renderInventory(category: 'sleds' | 'hats' | 'scarves' | 'goggles') {
+    const container = document.getElementById('inv-items-container')!;
+    container.innerHTML = '';
+
+    // Atualiza resumo
+    const sledIt = SHOP_CATALOG.find(i => i.id === this.equipped.vehicle);
+    const hatIt = SHOP_CATALOG.find(i => i.id === this.equipped.hat);
+    const scarfIt = SHOP_CATALOG.find(i => i.id === this.equipped.scarf);
+    const goggIt = SHOP_CATALOG.find(i => i.id === this.equipped.goggles);
+
+    document.getElementById('summary-sled')!.innerText = sledIt ? sledIt.name : this.equipped.vehicle;
+    document.getElementById('summary-hat')!.innerText = hatIt ? hatIt.name : this.equipped.hat;
+    document.getElementById('summary-scarf')!.innerText = scarfIt ? scarfIt.name : this.equipped.scarf;
+    document.getElementById('summary-goggles')!.innerText = goggIt ? goggIt.name : this.equipped.goggles;
+
+    const ownedItems = SHOP_CATALOG.filter(it => it.category === category && this.inventory.has(it.id));
+
+    for (const it of ownedItems) {
+      const card = document.createElement('div');
+      const isEquipped = this.isItemEquipped(it.id, it.category);
+      card.className = 'item-card' + (isEquipped ? ' equipped' : '');
+
+      let buttonHtml = isEquipped
+        ? `<button class="item-btn btn-equipped">✓ Em Uso</button>`
+        : `<button class="item-btn btn-equip" data-invequip="${it.id}" data-invcat="${it.category}">Equipar</button>`;
+
+      card.innerHTML = `
+        <div class="item-icon">${it.icon}</div>
+        <div class="item-title">${it.name}</div>
+        <div class="item-desc">${it.desc}</div>
+        ${buttonHtml}
+      `;
+      container.appendChild(card);
+    }
+
+    container.querySelectorAll('[data-invequip]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = (e.currentTarget as HTMLElement).getAttribute('data-invequip')!;
+        const cat = (e.currentTarget as HTMLElement).getAttribute('data-invcat') as any;
+        this.equipItem(id, cat);
+        this.renderInventory(category);
+      });
+    });
+  }
+
+  private isItemEquipped(id: string, cat: string): boolean {
+    if (cat === 'sleds') return this.equipped.vehicle === id;
+    if (cat === 'hats') return this.equipped.hat === id;
+    if (cat === 'scarves') return this.equipped.scarf === id;
+    if (cat === 'goggles') return this.equipped.goggles === id;
+    return false;
+  }
+
+  private buyItem(id: string) {
+    const item = SHOP_CATALOG.find(i => i.id === id);
+    if (!item) return;
+
+    if (this.currency >= item.price) {
+      this.currency -= item.price;
+      this.inventory.add(id);
+      this.updateCoinsDisplay();
+      this.equipItem(id, item.category);
+      alert(`Parabéns! Você adquiriu e equipou: ${item.name}!`);
+      this.renderShop(item.category);
+    } else {
+      alert(`Moedas insuficientes! Você precisa de mais ${item.price - this.currency} pts para comprar este item.`);
+    }
+  }
+
+  private equipItem(id: string, cat: 'sleds' | 'hats' | 'scarves' | 'goggles') {
+    if (cat === 'sleds') this.equipped.vehicle = id;
+    if (cat === 'hats') this.equipped.hat = id;
+    if (cat === 'scarves') this.equipped.scarf = id;
+    if (cat === 'goggles') this.equipped.goggles = id;
+
+    // Reconstrói o avatar instantaneamente com as novas peças visuais
+    this.respawnPlayerMesh();
+  }
+
+  // =========================================================================
+  // SETUP DE CONTROLES E EVENTOS
+  // =========================================================================
   private setupUIAndControls() {
     const loginScreen = document.getElementById('login-screen')!;
-    const currencyEl = document.getElementById('currency-val')!;
 
     const startSession = (name: string) => {
       loginScreen.style.display = 'none';
@@ -937,29 +1494,61 @@ class SnowSlideTPSMasterEngine {
       startSession('Pro_Racer_2026');
     });
 
-    document.getElementById('board-shop-btn')!.addEventListener('click', () => {
-      if (this.currency >= 500) {
-        this.currency -= 500;
-        currencyEl.innerText = this.currency.toString();
-        this.currentVehicle = this.currentVehicle === 'board' ? 'sled' : 'board';
-        alert(`Veículo equipado com sucesso: ${this.currentVehicle.toUpperCase()}!`);
-        this.respawnPlayerMesh();
-      } else {
-        alert('Moedas insuficientes!');
-      }
-    });
-
-    document.getElementById('cable-car-btn')!.addEventListener('click', () => {
-      this.loadRacingScene();
-    });
-
     document.getElementById('back-hub-btn')!.addEventListener('click', () => {
       this.loadHubScene();
     });
 
+    // Modais de Loja e Inventário
+    const shopModal = document.getElementById('shop-modal')!;
+    const invModal = document.getElementById('inventory-modal')!;
+
+    document.getElementById('open-shop-btn')!.addEventListener('click', () => {
+      this.updateCoinsDisplay();
+      this.renderShop('sleds');
+      shopModal.style.display = 'flex';
+    });
+
+    document.getElementById('close-shop-btn')!.addEventListener('click', () => {
+      shopModal.style.display = 'none';
+    });
+
+    document.getElementById('open-inventory-btn')!.addEventListener('click', () => {
+      this.renderInventory('sleds');
+      invModal.style.display = 'flex';
+    });
+
+    document.getElementById('close-inv-btn')!.addEventListener('click', () => {
+      invModal.style.display = 'none';
+    });
+
+    // Abas da Loja
+    document.querySelectorAll('[data-shop-tab]').forEach(tabBtn => {
+      tabBtn.addEventListener('click', (e) => {
+        document.querySelectorAll('[data-shop-tab]').forEach(b => b.classList.remove('active'));
+        (e.currentTarget as HTMLElement).classList.add('active');
+        const cat = (e.currentTarget as HTMLElement).getAttribute('data-shop-tab') as any;
+        this.renderShop(cat);
+      });
+    });
+
+    // Abas do Inventário
+    document.querySelectorAll('[data-inv-tab]').forEach(tabBtn => {
+      tabBtn.addEventListener('click', (e) => {
+        document.querySelectorAll('[data-inv-tab]').forEach(b => b.classList.remove('active'));
+        (e.currentTarget as HTMLElement).classList.add('active');
+        const cat = (e.currentTarget as HTMLElement).getAttribute('data-inv-tab') as any;
+        this.renderInventory(cat);
+      });
+    });
+
+    // Interação com o Bondinho
+    const cablePrompt = document.getElementById('cable-car-prompt')!;
+    cablePrompt.addEventListener('click', () => {
+      this.startCableCarClimb();
+    });
+
     // Analógico Virtual
     const joystickBase = document.getElementById('joystick-base')!;
-    
     joystickBase.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       this.activeJoystickPointerId = e.pointerId;
@@ -999,11 +1588,11 @@ class SnowSlideTPSMasterEngine {
     joystickBase.addEventListener('pointerup', endJoystick);
     joystickBase.addEventListener('pointercancel', endJoystick);
 
-    // Câmera Órbita 360° (Apenas ativa no Hub)
+    // Câmera Órbita 360° (Hub)
     window.addEventListener('pointerdown', (e) => {
       if (this.currentScene !== 'HUB') return;
       const target = e.target as HTMLElement;
-      if (target && (target.closest('#hub-ui') || target.closest('#joystick-ui') || target.closest('#jump-btn') || target.closest('button') || target.closest('input'))) return;
+      if (target && (target.closest('#hub-ui') || target.closest('#joystick-ui') || target.closest('#jump-btn') || target.closest('#run-btn') || target.closest('#cable-car-prompt') || target.closest('.modal-card') || target.closest('button') || target.closest('input'))) return;
       
       this.activeOrbitPointerId = e.pointerId;
       this.isDragging = true;
@@ -1034,7 +1623,7 @@ class SnowSlideTPSMasterEngine {
     window.addEventListener('pointerup', endOrbit);
     window.addEventListener('pointercancel', endOrbit);
 
-    // FÍSICA DE SALTO MELHORADA: Pulo suave com hang-time (arco longo e flutuante)
+    // Pulo com física fluida
     const triggerJump = () => {
       if (!this.isJumping) {
         this.isJumping = true;
@@ -1048,13 +1637,23 @@ class SnowSlideTPSMasterEngine {
       triggerJump();
     });
 
+    // Botão de Correr Dedicado (Mobile)
+    const runBtn = document.getElementById('run-btn')!;
+    runBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.isRunning = !this.isRunning;
+      runBtn.classList.toggle('active', this.isRunning);
+    });
+
     window.addEventListener('keydown', (e) => {
       if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') this.keyW = true;
       if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') this.keyS = true;
       if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') this.keyA = true;
       if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') this.keyD = true;
-      if (e.key === ' ') {
-        triggerJump();
+      if (e.key === 'Shift') { this.keyShift = true; this.isRunning = true; }
+      if (e.key === ' ') triggerJump();
+      if ((e.key === 'e' || e.key === 'E') && this.currentScene === 'HUB' && this.nearCableCar) {
+        this.startCableCarClimb();
       }
     });
 
@@ -1063,6 +1662,7 @@ class SnowSlideTPSMasterEngine {
       if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') this.keyS = false;
       if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') this.keyA = false;
       if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') this.keyD = false;
+      if (e.key === 'Shift') { this.keyShift = false; this.isRunning = false; }
     });
   }
 
@@ -1081,10 +1681,12 @@ class SnowSlideTPSMasterEngine {
     if (this.keyD) inputLateral = 1;
 
     if (this.currentScene === 'HUB') {
-      const speed = 0.22;
+      // MOVIMENTAÇÃO NO HUB A PÉ COM ANIMAÇÃO PROCEDURAL
+      const running = this.isRunning || this.keyShift;
+      const moveSpeed = running ? 0.28 : 0.15;
+      const isMoving = Math.abs(inputForward) > 0.05 || Math.abs(inputLateral) > 0.05;
 
-      if (Math.abs(inputForward) > 0.05 || Math.abs(inputLateral) > 0.05) {
-        // Direção da Câmera no Hub (W vai para frente na direção que a câmera olha)
+      if (isMoving) {
         const forward = new THREE.Vector3(-Math.sin(this.cameraAngleY), 0, -Math.cos(this.cameraAngleY));
         const lateral = new THREE.Vector3(Math.cos(this.cameraAngleY), 0, -Math.sin(this.cameraAngleY));
 
@@ -1093,23 +1695,28 @@ class SnowSlideTPSMasterEngine {
           .addScaledVector(lateral, inputLateral)
           .normalize();
 
-        this.playerPosX += moveDir.x * speed;
-        this.playerPosZ += moveDir.z * speed;
+        this.playerPosX += moveDir.x * moveSpeed;
+        this.playerPosZ += moveDir.z * moveSpeed;
 
         this.playerGroup.rotation.y = Math.atan2(moveDir.x, moveDir.z);
 
+        // Animação de caminhada/corrida dos membros do pinguim
+        this.walkTime += running ? 0.28 : 0.16;
+        this.animatePenguinWalk(this.walkTime, running);
+
         if (this.playerPosY === 0) {
           this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
-          this.emitSnowSpray(1, 0);
+          this.emitSnowSpray(running ? 2 : 1, 0);
         }
       } else {
+        this.animatePenguinIdle();
         this.prevTrailLeft = null;
         this.prevTrailRight = null;
       }
 
       this.updateSnowSpray();
 
-      // Física de pulo flutuante e suave no Hub
+      // Pulo flutuante no Hub
       if (this.isJumping) {
         this.playerPosY += this.jumpVelY;
         this.jumpVelY -= 0.014;
@@ -1126,6 +1733,40 @@ class SnowSlideTPSMasterEngine {
 
       this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
 
+      // Verificação de proximidade da Estação do Bondinho
+      const distToStation = this.cableCarStationPos.distanceTo(new THREE.Vector3(this.playerPosX, 0, this.playerPosZ));
+      const promptEl = document.getElementById('cable-car-prompt')!;
+      if (distToStation < 7.0) {
+        this.nearCableCar = true;
+        promptEl.style.display = 'block';
+      } else {
+        this.nearCableCar = false;
+        promptEl.style.display = 'none';
+      }
+
+      // Animação das fagulhas da fogueira
+      if (this.bonfireEmbers && this.bonfireLight) {
+        this.bonfireLight.intensity = 2.4 + Math.sin(Date.now() * 0.01) * 0.4;
+        const posArr = (this.bonfireEmbers.geometry.getAttribute('position') as THREE.BufferAttribute).array as Float32Array;
+        for (let i = 0; i < this.bonfireEmberData.length; i++) {
+          const emb = this.bonfireEmberData[i];
+          emb.y += emb.vy;
+          emb.x += emb.vx;
+          emb.z += emb.vz;
+          emb.life++;
+          if (emb.life > 35) {
+            emb.y = 0.3;
+            emb.x = (Math.random() - 0.5) * 0.8;
+            emb.z = (Math.random() - 0.5) * 0.8;
+            emb.life = 0;
+          }
+          posArr[i * 3] = emb.x;
+          posArr[i * 3 + 1] = emb.y;
+          posArr[i * 3 + 2] = emb.z;
+        }
+        this.bonfireEmbers.geometry.getAttribute('position').needsUpdate = true;
+      }
+
       // Câmera Órbita 360° do Hub
       const camX = this.playerPosX + Math.sin(this.cameraAngleY) * (this.cameraDistance * Math.cos(this.cameraAngleX));
       const camZ = this.playerPosZ + Math.cos(this.cameraAngleY) * (this.cameraDistance * Math.cos(this.cameraAngleX));
@@ -1134,26 +1775,17 @@ class SnowSlideTPSMasterEngine {
       this.camera.position.set(camX, camY, camZ);
       this.camera.lookAt(this.playerPosX, this.playerPosY + 0.5, this.playerPosZ);
 
-      if (this.room) {
-        this.room.send('updatePosition', {
-          x: this.playerPosX,
-          y: this.playerPosY,
-          z: this.playerPosZ,
-          rotY: this.playerGroup.rotation.y
-        });
-      }
-
     } else if (this.currentScene === 'RACING') {
       // =========================================================================
-      // FÍSICA DE DESCIDA BALANCEADA & CORREÇÃO DA DIREÇÃO (ESTILO SLEDDING GAME)
+      // FÍSICA DE DESCIDA BALANCEADA & DIREÇÃO CORRETA (ESTILO SLEDDING GAME)
       // =========================================================================
       const baseCruise = 0.48;
       if (this.playerVelZ < baseCruise) {
         this.playerVelZ += 0.0015;
       }
 
-      // W / Analógico Cima: Projeção aerodinâmica (boost suave até 0.68)
-      // S / Analógico Baixo: Frenagem na neve (spray de neve até 0.18)
+      // W / Analógico Cima: Projeção aerodinâmica (boost suave)
+      // S / Analógico Baixo: Frenagem na neve com spray
       if (inputForward > 0.1) {
         this.playerVelZ = Math.min(0.68, this.playerVelZ + 0.004);
       } else if (inputForward < -0.1) {
@@ -1161,10 +1793,7 @@ class SnowSlideTPSMasterEngine {
         this.emitSnowSpray(4, 0);
       }
 
-      // CORREÇÃO CRÍTICA DE DIREÇÃO NA CORRIDA:
-      // Ao olhar para +Z na Three.js, a direita da tela é -X e a esquerda é +X.
-      // D / Analógico Direita (inputLateral > 0) -> move para a DIREITA da tela (-X).
-      // A / Analógico Esquerda (inputLateral < 0) -> move para a ESQUERDA da tela (+X).
+      // Direção correta: D esterça para a Direita da tela (-X), A esterça para a Esquerda (+X)
       const steeringSensitivity = 0.046;
       this.playerVelX -= inputLateral * steeringSensitivity;
       this.playerVelX *= 0.88;
@@ -1173,44 +1802,35 @@ class SnowSlideTPSMasterEngine {
       this.playerPosX += this.playerVelX;
       this.playerPosZ += this.playerVelZ;
 
-      // Limites de pista seguros (-23.5 a +23.5)
-      if (this.playerPosX < -23.5) {
-        this.playerPosX = -23.5;
-        this.playerVelX = 0;
-      }
-      if (this.playerPosX > 23.5) {
-        this.playerPosX = 23.5;
-        this.playerVelX = 0;
-      }
+      // Limites de pista
+      if (this.playerPosX < -23.5) { this.playerPosX = -23.5; this.playerVelX = 0; }
+      if (this.playerPosX > 23.5) { this.playerPosX = 23.5; this.playerVelX = 0; }
 
-      // FÍSICA DE SALTO COM GRAVIDADE REALISTA E HANG-TIME (ARCO LONGO E SATISFATÓRIO)
+      // Física de salto com hang-time estendido
       if (this.isJumping) {
         this.playerPosY += this.jumpVelY;
-        this.jumpVelY -= 0.012; // Gravidade reduzida = pulo cinematográfico longo
-        
-        // Inclinação dinâmica no ar (nariz sobe na decolagem e desce no pouso)
+        this.jumpVelY -= 0.012;
+
         const pitchAngle = 0.08 - this.jumpVelY * 0.35;
         this.playerGroup.rotation.x = pitchAngle;
-        this.playerGroup.rotation.z = -this.playerVelX * 1.1; // Manobra aérea sutil
+        this.playerGroup.rotation.z = -this.playerVelX * 1.1;
 
         if (this.playerPosY <= 0) {
           this.playerPosY = 0;
           this.isJumping = false;
           this.jumpVelY = 0;
           this.playerGroup.rotation.x = 0.08;
-          // Pouso com impacto satisfatório e explosão de pó de neve
           this.emitSnowSpray(18, 0);
         }
       } else {
-        // Animação de inclinação dinâmica em contato com a neve
-        this.playerGroup.rotation.z = -this.playerVelX * 0.92; // Inclina para o lado da curva
-        this.playerGroup.rotation.y = this.playerVelX * 0.38;   // Aponta o bico na direção do carving
-        this.playerGroup.rotation.x = 0.08;                     // Inclinação da descida da montanha
+        this.playerGroup.rotation.z = -this.playerVelX * 0.92;
+        this.playerGroup.rotation.y = this.playerVelX * 0.38;
+        this.playerGroup.rotation.x = 0.08;
       }
 
       this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
 
-      // Rastro contínuo e spray de neve (apenas quando no solo)
+      // Rastro duplo contínuo e spray
       if (this.playerPosY === 0) {
         this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
         const isCarving = Math.abs(this.playerVelX) > 0.06;
@@ -1228,24 +1848,28 @@ class SnowSlideTPSMasterEngine {
           if (Math.abs(this.playerPosX - gate.x) < 2.8) {
             gate.passed = true;
             this.score += 100;
+            this.currency += 10;
+            this.updateCoinsDisplay();
             this.emitSnowSpray(10, 0);
           }
         }
       }
 
-      // Colisão com Rampas de Neve (Salto épico com arco longo e hang-time)
+      // Colisão com Rampas de Neve (Salto dinâmico)
       for (const ramp of this.ramps) {
         if (!this.isJumping && Math.abs(this.playerPosZ - ramp.z) < 2.0) {
           if (Math.abs(this.playerPosX - ramp.x) < 2.4) {
             this.isJumping = true;
-            this.jumpVelY = 0.58; // Grande salto de rampa
+            this.jumpVelY = 0.58;
             this.score += 150;
+            this.currency += 15;
+            this.updateCoinsDisplay();
             this.emitSnowSpray(14, 0);
           }
         }
       }
 
-      // Colisão com Obstáculos (árvores e rochas)
+      // Colisão com Obstáculos
       for (const obs of this.obstacles) {
         const dx = this.playerPosX - obs.x;
         const dz = this.playerPosZ - obs.z;
@@ -1257,7 +1881,7 @@ class SnowSlideTPSMasterEngine {
         }
       }
 
-      // Pontuação por distância
+      // Pontuação
       this.score += Math.round(this.playerVelZ * 3.5);
       const scoreEl = document.getElementById('score-val');
       if (scoreEl) scoreEl.innerText = this.score.toString();
@@ -1265,7 +1889,7 @@ class SnowSlideTPSMasterEngine {
       const speedEl = document.getElementById('speed-val');
       if (speedEl) speedEl.innerText = Math.round(this.playerVelZ * 80).toString();
 
-      // CÂMERA CHASE DEDICADA DE 3ª PESSOA
+      // Câmera Chase 3ª pessoa
       const targetCamX = this.playerPosX * 0.55;
       const targetCamY = this.playerPosY + 2.4;
       const targetCamZ = this.playerPosZ - 5.8;
