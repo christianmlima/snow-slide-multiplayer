@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-const GAME_VERSION = "v1.4.3-STABLE";
+const GAME_VERSION = "v1.5.0-STABLE";
 class SnowSlideTPSMasterEngine {
     client;
     room;
@@ -20,9 +20,13 @@ class SnowSlideTPSMasterEngine {
     score = 0;
     otherPlayers = new Map();
     obstacles = [];
+    gates = [];
+    ramps = [];
     skidMarks = [];
     snowParticles;
-    // Câmera Órbita 360°
+    snowSprayPoints;
+    sprayData = [];
+    // Câmera Órbita 360° (Hub)
     isDragging = false;
     activeOrbitPointerId = null;
     previousTouchX = 0;
@@ -30,7 +34,7 @@ class SnowSlideTPSMasterEngine {
     cameraAngleY = 0;
     cameraAngleX = 0.35;
     cameraDistance = 10;
-    // Analógico Virtual com PointerId dedicado
+    // Analógico Virtual
     joystickActive = false;
     activeJoystickPointerId = null;
     joystickStartX = 0;
@@ -46,18 +50,207 @@ class SnowSlideTPSMasterEngine {
         this.initEngine();
     }
     createSnowParticles() {
-        const count = 600;
+        const count = 750;
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(count * 3);
         for (let i = 0; i < count * 3; i += 3) {
-            positions[i] = (Math.random() - 0.5) * 60;
-            positions[i + 1] = Math.random() * 25;
-            positions[i + 2] = (Math.random() - 0.5) * 60;
+            positions[i] = (Math.random() - 0.5) * 80;
+            positions[i + 1] = Math.random() * 30;
+            positions[i + 2] = (Math.random() - 0.5) * 80;
         }
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        const material = new THREE.PointsMaterial({ color: 0xffffff, size: 0.35, transparent: true, opacity: 0.9 });
+        const material = new THREE.PointsMaterial({ color: 0xffffff, size: 0.32, transparent: true, opacity: 0.85 });
         this.snowParticles = new THREE.Points(geometry, material);
         this.scene.add(this.snowParticles);
+    }
+    createSnowSpraySystem() {
+        const count = 120;
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        for (let i = 0; i < count * 3; i++)
+            positions[i] = 0;
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const mat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.45,
+            transparent: true,
+            opacity: 0.8
+        });
+        this.snowSprayPoints = new THREE.Points(geo, mat);
+        this.sprayData = [];
+        for (let i = 0; i < count; i++) {
+            this.sprayData.push({ x: 0, y: -999, z: 0, vx: 0, vy: 0, vz: 0, life: 0 });
+        }
+        this.scene.add(this.snowSprayPoints);
+    }
+    emitSnowSpray(count, lateralBoost = 0) {
+        if (!this.snowSprayPoints)
+            return;
+        let emitted = 0;
+        for (let i = 0; i < this.sprayData.length; i++) {
+            const p = this.sprayData[i];
+            if (p.life <= 0) {
+                p.x = this.playerPosX + (Math.random() - 0.5) * 0.5;
+                p.y = this.playerPosY + 0.08;
+                p.z = this.playerPosZ - 0.7;
+                p.vx = (Math.random() - 0.5) * 0.12 - lateralBoost * 0.3;
+                p.vy = 0.04 + Math.random() * 0.08;
+                p.vz = -0.12 - Math.random() * 0.15;
+                p.life = 16 + Math.floor(Math.random() * 12);
+                emitted++;
+                if (emitted >= count)
+                    break;
+            }
+        }
+    }
+    updateSnowSpray() {
+        if (!this.snowSprayPoints)
+            return;
+        const posAttr = this.snowSprayPoints.geometry.getAttribute('position');
+        const arr = posAttr.array;
+        for (let i = 0; i < this.sprayData.length; i++) {
+            const p = this.sprayData[i];
+            if (p.life > 0) {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.z += p.vz;
+                p.vy -= 0.0035;
+                p.life--;
+                arr[i * 3] = p.x;
+                arr[i * 3 + 1] = p.y;
+                arr[i * 3 + 2] = p.z;
+            }
+            else {
+                arr[i * 3 + 1] = -999;
+            }
+        }
+        posAttr.needsUpdate = true;
+    }
+    addSkidMark(x, y, z, headingRad) {
+        const trackGeo = new THREE.PlaneGeometry(0.18, 1.2);
+        const trackMat = new THREE.MeshBasicMaterial({
+            color: 0xbae6fd,
+            transparent: true,
+            opacity: 0.55,
+            depthWrite: false
+        });
+        const offset = 0.42;
+        const cosH = Math.cos(headingRad);
+        const sinH = Math.sin(headingRad);
+        const markL = new THREE.Mesh(trackGeo, trackMat);
+        markL.rotation.x = -Math.PI / 2;
+        markL.rotation.z = -headingRad;
+        markL.position.set(x - cosH * offset, y + 0.02, z + sinH * offset);
+        this.scene.add(markL);
+        this.skidMarks.push({ mesh: markL, createdAt: Date.now() });
+        const markR = new THREE.Mesh(trackGeo, trackMat);
+        markR.rotation.x = -Math.PI / 2;
+        markR.rotation.z = -headingRad;
+        markR.position.set(x + cosH * offset, y + 0.02, z - sinH * offset);
+        this.scene.add(markR);
+        this.skidMarks.push({ mesh: markR, createdAt: Date.now() });
+        while (this.skidMarks.length > 250) {
+            const old = this.skidMarks.shift();
+            this.scene.remove(old.mesh);
+            old.mesh.geometry.dispose();
+            old.mesh.material.dispose();
+        }
+    }
+    clearAllSkidMarks() {
+        for (const m of this.skidMarks) {
+            this.scene.remove(m.mesh);
+            m.mesh.geometry.dispose();
+            m.mesh.material.dispose();
+        }
+        this.skidMarks = [];
+    }
+    createSnowyPineTree() {
+        const group = new THREE.Group();
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 2.0, 7), new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.9 }));
+        trunk.position.y = 1.0;
+        trunk.castShadow = true;
+        group.add(trunk);
+        const greenMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.8 });
+        const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+        // Camada 1 (Base)
+        const t1 = new THREE.Mesh(new THREE.ConeGeometry(2.6, 2.3, 7), greenMat);
+        t1.position.y = 2.4;
+        t1.castShadow = true;
+        const s1 = new THREE.Mesh(new THREE.ConeGeometry(2.65, 0.7, 7), snowMat);
+        s1.position.y = 2.65;
+        group.add(t1, s1);
+        // Camada 2 (Meio)
+        const t2 = new THREE.Mesh(new THREE.ConeGeometry(2.0, 1.9, 7), greenMat);
+        t2.position.y = 3.7;
+        t2.castShadow = true;
+        const s2 = new THREE.Mesh(new THREE.ConeGeometry(2.05, 0.6, 7), snowMat);
+        s2.position.y = 3.95;
+        group.add(t2, s2);
+        // Camada 3 (Topo)
+        const t3 = new THREE.Mesh(new THREE.ConeGeometry(1.4, 1.7, 7), greenMat);
+        t3.position.y = 4.9;
+        t3.castShadow = true;
+        const s3 = new THREE.Mesh(new THREE.ConeGeometry(1.45, 0.8, 7), snowMat);
+        s3.position.y = 5.25;
+        group.add(t3, s3);
+        return group;
+    }
+    createSnowyRock() {
+        const group = new THREE.Group();
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+        const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.4, 1), rockMat);
+        rock.position.y = 0.9;
+        rock.scale.set(1.2, 0.8, 1.1);
+        rock.castShadow = true;
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(1.1, 8, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), snowMat);
+        cap.position.y = 1.35;
+        cap.scale.set(1.15, 0.5, 1.05);
+        group.add(rock, cap);
+        return group;
+    }
+    createSlalomGate(colorHex) {
+        const group = new THREE.Group();
+        const poleMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.3 });
+        const bannerMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.5, side: THREE.DoubleSide });
+        const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.2, 8), poleMat);
+        p1.position.set(-2.8, 1.6, 0);
+        p1.castShadow = true;
+        const p2 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.2, 8), poleMat);
+        p2.position.set(2.8, 1.6, 0);
+        p2.castShadow = true;
+        const banner = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 0.8), bannerMat);
+        banner.position.set(0, 2.7, 0);
+        group.add(p1, p2, banner);
+        return group;
+    }
+    createSnowRamp() {
+        const group = new THREE.Group();
+        const rampMat = new THREE.MeshStandardMaterial({ color: 0xe0f2fe, roughness: 0.7 });
+        const ramp = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.8, 4.0), rampMat);
+        ramp.rotation.x = -0.18;
+        ramp.position.set(0, 0.35, 0);
+        ramp.castShadow = true;
+        ramp.receiveShadow = true;
+        group.add(ramp);
+        const flagMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b });
+        const f1 = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.0), flagMat);
+        f1.position.set(-2.4, 1.0, 1.8);
+        const f2 = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.0), flagMat);
+        f2.position.set(2.4, 1.0, 1.8);
+        group.add(f1, f2);
+        return group;
+    }
+    createMountainPeak(radius, height) {
+        const group = new THREE.Group();
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.95 });
+        const snowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 });
+        const base = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 6), rockMat);
+        base.position.y = height / 2;
+        const snowCap = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.48, height * 0.45, 6), snowMat);
+        snowCap.position.y = height * 0.78;
+        group.add(base, snowCap);
+        return group;
     }
     initEngine() {
         this.scene = new THREE.Scene();
@@ -79,6 +272,7 @@ class SnowSlideTPSMasterEngine {
         sun.shadow.mapSize.height = 2048;
         this.scene.add(sun);
         this.createSnowParticles();
+        this.createSnowSpraySystem();
         this.setupUIAndControls();
         window.addEventListener('resize', () => {
             this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -91,12 +285,15 @@ class SnowSlideTPSMasterEngine {
         this.currentScene = 'HUB';
         this.scene.clear();
         this.scene.background = new THREE.Color(0xcbe4f9);
+        this.scene.fog = new THREE.FogExp2(0xcbe4f9, 0.005);
         const ambient = new THREE.AmbientLight(0xffffff, 0.9);
         this.scene.add(ambient);
         const sun = new THREE.DirectionalLight(0xffffff, 1.3);
         sun.position.set(40, 70, -40);
         this.scene.add(sun);
-        this.scene.add(this.snowParticles);
+        this.createSnowParticles();
+        this.createSnowSpraySystem();
+        this.clearAllSkidMarks();
         const groundGeo = new THREE.PlaneGeometry(300, 300, 32, 32);
         const groundMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.9 });
         const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -127,27 +324,37 @@ class SnowSlideTPSMasterEngine {
         stationGroup.add(signPost, signBoard);
         stationGroup.position.set(25, 0, -20);
         this.scene.add(stationGroup);
-        for (let i = 0; i < 20; i++) {
-            const angle = (i / 20) * Math.PI * 2;
-            const radius = 60 + Math.random() * 30;
+        // Floresta alpina ao redor do Hub
+        for (let i = 0; i < 28; i++) {
+            const angle = (i / 28) * Math.PI * 2;
+            const radius = 55 + Math.random() * 35;
             const x = Math.cos(angle) * radius;
             const z = Math.sin(angle) * radius;
-            const tree = new THREE.Group();
-            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 2), new THREE.MeshStandardMaterial({ color: 0x78350f }));
-            trunk.position.y = 1;
-            const leaves = new THREE.Mesh(new THREE.ConeGeometry(2.5, 5, 5), new THREE.MeshStandardMaterial({ color: 0x15803d }));
-            leaves.position.y = 4;
-            tree.add(trunk, leaves);
+            const tree = this.createSnowyPineTree();
             tree.position.set(x, 0, z);
+            tree.scale.setScalar(0.85 + Math.random() * 0.35);
             this.scene.add(tree);
         }
-        // RESET ABSOLUTO DE POSIÇÃO NO HUB
+        // RESET DE ESTADO E CÂMERA DO HUB
         this.playerPosX = 0;
         this.playerPosZ = 0;
         this.playerPosY = 0;
-        this.playerGroup = this.createAvatarMesh('penguin', this.currentVehicle);
+        this.playerVelX = 0;
+        this.playerVelZ = 0;
+        this.isJumping = false;
+        this.jumpVelY = 0;
+        this.keyW = false;
+        this.keyS = false;
+        this.keyA = false;
+        this.keyD = false;
+        this.joystickMoveX = 0;
+        this.joystickMoveY = 0;
+        this.cameraAngleY = 0;
+        this.cameraAngleX = 0.35;
+        this.cameraDistance = 10;
+        this.respawnPlayerMesh();
         this.playerGroup.position.set(0, 0, 0);
-        this.scene.add(this.playerGroup);
+        this.playerGroup.rotation.set(0, 0, 0);
         document.getElementById('hub-ui').style.display = 'block';
         document.getElementById('racing-hud').style.display = 'none';
         document.getElementById('back-hub-btn').style.display = 'none';
@@ -156,63 +363,145 @@ class SnowSlideTPSMasterEngine {
     loadRacingScene() {
         this.currentScene = 'RACING';
         this.scene.clear();
-        this.scene.background = new THREE.Color(0xdbeafe);
-        this.scene.fog = new THREE.FogExp2(0xdbeafe, 0.008);
-        const ambient = new THREE.AmbientLight(0xffffff, 0.9);
+        // Atmosfera Alpina Imersiva (Estilo Sledding Game)
+        this.scene.background = new THREE.Color(0xbdddf7);
+        this.scene.fog = new THREE.FogExp2(0xcde3f7, 0.0035);
+        const ambient = new THREE.AmbientLight(0xdbeafe, 0.85);
         this.scene.add(ambient);
-        const sun = new THREE.DirectionalLight(0xffffff, 1.3);
-        sun.position.set(40, 70, -40);
+        const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+        sun.position.set(40, 80, -20);
+        sun.castShadow = true;
+        sun.shadow.mapSize.width = 2048;
+        sun.shadow.mapSize.height = 2048;
         this.scene.add(sun);
-        this.scene.add(this.snowParticles);
-        // PISTA DE CORRIDA ISOLADA COM Z INICIANDO EM 0 (ZERADO)
-        const trackGeo = new THREE.PlaneGeometry(120, 5000, 32, 300);
-        const pos = trackGeo.attributes.position;
-        for (let i = 0; i < pos.count; i++) {
-            const y = pos.getY(i);
-            pos.setZ(i, pos.getZ(i) + Math.abs(y) * 0.12);
-        }
-        trackGeo.computeVertexNormals();
-        const trackMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.95 });
+        this.createSnowParticles();
+        this.createSnowSpraySystem();
+        this.clearAllSkidMarks();
+        // Pista principal de neve compactada
+        const trackGeo = new THREE.PlaneGeometry(48, 5600, 16, 120);
+        const trackMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.92 });
         const track = new THREE.Mesh(trackGeo, trackMat);
-        track.rotation.x = Math.PI / 2 - 0.12;
-        track.position.set(0, -2.5, 2500);
+        track.rotation.x = -Math.PI / 2;
+        track.position.set(0, 0, 2700);
         track.receiveShadow = true;
         this.scene.add(track);
+        // Paredões/encostas de neve nas laterais (efeito cânion/half-pipe alpino)
+        const bermGeo = new THREE.PlaneGeometry(60, 5600, 8, 60);
+        const bermMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.95 });
+        const leftBerm = new THREE.Mesh(bermGeo, bermMat);
+        leftBerm.rotation.x = -Math.PI / 2;
+        leftBerm.rotation.y = 0.24;
+        leftBerm.position.set(-48, 4.5, 2700);
+        leftBerm.receiveShadow = true;
+        this.scene.add(leftBerm);
+        const rightBerm = new THREE.Mesh(bermGeo, bermMat);
+        rightBerm.rotation.x = -Math.PI / 2;
+        rightBerm.rotation.y = -0.24;
+        rightBerm.position.set(48, 4.5, 2700);
+        rightBerm.receiveShadow = true;
+        this.scene.add(rightBerm);
+        // Cordilheira de montanhas no horizonte e nas laterais
+        for (let mz = 200; mz <= 5200; mz += 380) {
+            const p1 = this.createMountainPeak(45 + Math.random() * 20, 65 + Math.random() * 35);
+            p1.position.set(-110 - Math.random() * 30, 0, mz + (Math.random() - 0.5) * 80);
+            this.scene.add(p1);
+            const p2 = this.createMountainPeak(45 + Math.random() * 20, 65 + Math.random() * 35);
+            p2.position.set(110 + Math.random() * 30, 0, mz + (Math.random() - 0.5) * 80);
+            this.scene.add(p2);
+        }
+        // Paredão de pinheiros nevados ao longo da pista
+        for (let tz = 10; tz <= 5300; tz += 24) {
+            const tLeft = this.createSnowyPineTree();
+            tLeft.position.set(-25.5 - Math.random() * 8, 0, tz + (Math.random() - 0.5) * 6);
+            tLeft.scale.setScalar(0.85 + Math.random() * 0.4);
+            this.scene.add(tLeft);
+            const tRight = this.createSnowyPineTree();
+            tRight.position.set(25.5 + Math.random() * 8, 0, tz + (Math.random() - 0.5) * 6);
+            tRight.scale.setScalar(0.85 + Math.random() * 0.4);
+            this.scene.add(tRight);
+        }
         this.obstacles = [];
-        let nextZ = 60;
-        for (let i = 0; i < 70; i++) {
-            const isTree = Math.random() > 0.35;
+        this.gates = [];
+        this.ramps = [];
+        // Obstáculos (árvores e pedras nevadas dentro da pista)
+        let nextZ = 75;
+        for (let i = 0; i < 65; i++) {
+            const isTree = Math.random() > 0.45;
             const xPos = (Math.random() - 0.5) * 32;
-            const obsGroup = new THREE.Group();
+            let obsMesh;
+            let radius = 1.3;
             if (isTree) {
-                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 1.5, 6), new THREE.MeshStandardMaterial({ color: 0x78350f }));
-                trunk.position.y = 0.75;
-                const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.8, 3.5, 6), new THREE.MeshStandardMaterial({ color: 0x15803d }));
-                leaves.position.y = 2.8;
-                obsGroup.add(trunk, leaves);
+                obsMesh = this.createSnowyPineTree();
+                obsMesh.scale.setScalar(0.75 + Math.random() * 0.25);
+                radius = 1.2;
             }
             else {
-                const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.4, 1), new THREE.MeshStandardMaterial({ color: 0x64748b }));
-                rock.position.y = 0.9;
-                obsGroup.add(rock);
+                obsMesh = this.createSnowyRock();
+                obsMesh.scale.setScalar(0.85 + Math.random() * 0.3);
+                radius = 1.5;
             }
-            obsGroup.position.set(xPos, -0.5, nextZ);
-            this.scene.add(obsGroup);
-            this.obstacles.push({ mesh: obsGroup, x: xPos, z: nextZ });
-            nextZ += 45 + Math.random() * 35;
+            obsMesh.position.set(xPos, 0, nextZ);
+            this.scene.add(obsMesh);
+            this.obstacles.push({ mesh: obsMesh, x: xPos, z: nextZ, radius });
+            nextZ += 55 + Math.random() * 45;
         }
-        const finishLine = new THREE.Mesh(new THREE.BoxGeometry(50, 8, 2), new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x7f1d1d }));
-        finishLine.position.set(0, 2, nextZ + 100);
-        this.scene.add(finishLine);
-        this.obstacles.push({ mesh: finishLine, x: 0, z: nextZ + 100 });
-        // GARANTIA ABSOLUTA DE RESET DE POSIÇÃO NA CORRIDA
+        // Portais de Slalom (Bandeiras vermelhas e azuis com bônus de pontuação)
+        for (let gz = 120; gz < 4900; gz += 110) {
+            const colorHex = (Math.floor(gz / 110) % 2 === 0) ? 0xef4444 : 0x0284c7;
+            const gate = this.createSlalomGate(colorHex);
+            const gateX = (Math.random() - 0.5) * 22;
+            gate.position.set(gateX, 0, gz);
+            this.scene.add(gate);
+            this.gates.push({ mesh: gate, x: gateX, z: gz, passed: false });
+        }
+        // Rampas de Neve (Kickers para saltos)
+        for (let rz = 180; rz < 4900; rz += 240) {
+            const ramp = this.createSnowRamp();
+            const rampX = (Math.random() - 0.5) * 24;
+            ramp.position.set(rampX, 0, rz);
+            this.scene.add(ramp);
+            this.ramps.push({ mesh: ramp, x: rampX, z: rz });
+        }
+        // Linha de Chegada / Portal Alpino em Z = 5000
+        const finishArch = new THREE.Group();
+        const postMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.8 });
+        const archP1 = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 9, 8), postMat);
+        archP1.position.set(-18, 4.5, 0);
+        const archP2 = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 9, 8), postMat);
+        archP2.position.set(18, 4.5, 0);
+        const crossBar = new THREE.Mesh(new THREE.BoxGeometry(37, 1.4, 1.2), postMat);
+        crossBar.position.set(0, 8.5, 0);
+        const bannerMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x7f1d1d });
+        const banner = new THREE.Mesh(new THREE.BoxGeometry(34, 2.2, 0.3), bannerMat);
+        banner.position.set(0, 7.2, 0);
+        finishArch.add(archP1, archP2, crossBar, banner);
+        finishArch.position.set(0, 0, 5000);
+        this.scene.add(finishArch);
+        // RESET TOTAL DE ESTADO DO JOGADOR NA CORRIDA
         this.playerPosX = 0;
         this.playerPosY = 0;
         this.playerPosZ = 0;
         this.playerVelX = 0;
-        this.playerVelZ = 0.5;
+        this.playerVelZ = 0.36; // Início suave e controlado
+        this.isJumping = false;
+        this.jumpVelY = 0;
         this.score = 0;
+        // Reset de inputs e teclas
+        this.keyW = false;
+        this.keyS = false;
+        this.keyA = false;
+        this.keyD = false;
+        this.joystickMoveX = 0;
+        this.joystickMoveY = 0;
+        // Reset de ângulos de órbita do Hub
+        this.cameraAngleY = 0;
+        this.cameraAngleX = 0.35;
+        // Câmera posicionada imediatamente atrás do trenó
+        this.camera.position.set(0, 2.5, -6.0);
+        this.camera.lookAt(0, 0.7, 8.0);
         this.respawnPlayerMesh();
+        this.playerGroup.position.set(0, 0, 0);
+        this.playerGroup.rotation.set(0.08, 0, 0);
         document.getElementById('hub-ui').style.display = 'none';
         document.getElementById('racing-hud').style.display = 'block';
         document.getElementById('back-hub-btn').style.display = 'block';
@@ -220,24 +509,64 @@ class SnowSlideTPSMasterEngine {
     }
     createAvatarMesh(charType, vehicleType) {
         const group = new THREE.Group();
-        const vGeo = vehicleType === 'board' ? new THREE.BoxGeometry(1.4, 0.12, 2.4) : new THREE.BoxGeometry(1.6, 0.18, 2.6);
-        const vMat = new THREE.MeshStandardMaterial({ color: vehicleType === 'board' ? 0x0284c7 : 0xb45309, roughness: 0.3 });
+        // Veículo (Prancha de Snowboard ou Trenó)
+        const vGeo = vehicleType === 'board' ? new THREE.BoxGeometry(1.3, 0.12, 2.4) : new THREE.BoxGeometry(1.6, 0.18, 2.5);
+        const vMat = new THREE.MeshStandardMaterial({
+            color: vehicleType === 'board' ? 0x0284c7 : 0xb45309,
+            roughness: 0.35
+        });
         const vehicle = new THREE.Mesh(vGeo, vMat);
         vehicle.position.y = 0.06;
         vehicle.castShadow = true;
         group.add(vehicle);
-        const bodyGeo = new THREE.CapsuleGeometry(0.45, 0.6, 12, 12);
-        const bodyMat = new THREE.MeshStandardMaterial({ color: charType === 'penguin' ? 0x0f172a : 0xf59e0b, roughness: 0.4 });
+        // Corpo do Pinguim
+        const bodyGeo = new THREE.CapsuleGeometry(0.42, 0.65, 12, 12);
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: charType === 'penguin' ? 0x0f172a : 0xf59e0b,
+            roughness: 0.4
+        });
         const body = new THREE.Mesh(bodyGeo, bodyMat);
         body.position.y = 0.65;
         body.castShadow = true;
         group.add(body);
-        const headGeo = new THREE.SphereGeometry(0.35, 16, 16);
-        const headMat = new THREE.MeshStandardMaterial({ color: charType === 'penguin' ? 0x0f172a : 0xf59e0b, roughness: 0.4 });
+        // Barriguinha branca
+        const bellyGeo = new THREE.SphereGeometry(0.35, 12, 12);
+        const bellyMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
+        const belly = new THREE.Mesh(bellyGeo, bellyMat);
+        belly.position.set(0, 0.62, 0.22);
+        belly.scale.set(0.8, 1.05, 0.5);
+        group.add(belly);
+        // Cabeça
+        const headGeo = new THREE.SphereGeometry(0.34, 16, 16);
+        const headMat = new THREE.MeshStandardMaterial({
+            color: charType === 'penguin' ? 0x0f172a : 0xf59e0b,
+            roughness: 0.4
+        });
         const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 1.15;
+        head.position.y = 1.18;
         head.castShadow = true;
         group.add(head);
+        // Bico laranja (aponta para frente +Z)
+        const beakGeo = new THREE.ConeGeometry(0.12, 0.28, 6);
+        const beakMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+        const beak = new THREE.Mesh(beakGeo, beakMat);
+        beak.rotation.x = Math.PI / 2;
+        beak.position.set(0, 1.15, 0.42);
+        group.add(beak);
+        // Olhos
+        const eyeGeo = new THREE.SphereGeometry(0.06, 6, 6);
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const pupilGeo = new THREE.SphereGeometry(0.03, 6, 6);
+        const pupilMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+        eyeL.position.set(-0.14, 1.25, 0.28);
+        const pL = new THREE.Mesh(pupilGeo, pupilMat);
+        pL.position.set(-0.14, 1.25, 0.33);
+        const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+        eyeR.position.set(0.14, 1.25, 0.28);
+        const pR = new THREE.Mesh(pupilGeo, pupilMat);
+        pR.position.set(0.14, 1.25, 0.33);
+        group.add(eyeL, pL, eyeR, pR);
         return group;
     }
     respawnPlayerMesh() {
@@ -246,9 +575,6 @@ class SnowSlideTPSMasterEngine {
         this.playerGroup = this.createAvatarMesh('penguin', this.currentVehicle);
         this.scene.add(this.playerGroup);
     }
-    // =========================================================================
-    // SETUP DE CONTROLES (CORREÇÃO DEFINITIVA DO EIXO Y: PARA CIMA = FRENTE POSITIVA)
-    // =========================================================================
     setupUIAndControls() {
         const loginScreen = document.getElementById('login-screen');
         const currencyEl = document.getElementById('currency-val');
@@ -281,7 +607,7 @@ class SnowSlideTPSMasterEngine {
         document.getElementById('back-hub-btn').addEventListener('click', () => {
             this.loadHubScene();
         });
-        // Analógico Virtual com Eixo Y Corrigido (dy negativo para cima = inputForward positivo)
+        // Analógico Virtual
         const joystickBase = document.getElementById('joystick-base');
         joystickBase.addEventListener('pointerdown', (e) => {
             e.stopPropagation();
@@ -300,7 +626,7 @@ class SnowSlideTPSMasterEngine {
             const dist = Math.min(45, Math.sqrt(dx * dx + dy * dy));
             const angle = Math.atan2(dy, dx);
             this.joystickMoveX = (Math.cos(angle) * dist) / 45;
-            this.joystickMoveY = -(Math.sin(angle) * dist) / 45; // CORRIGIDO: Agora empurrar para cima é positivo
+            this.joystickMoveY = -(Math.sin(angle) * dist) / 45;
             const knob = document.getElementById('joystick-knob');
             knob.style.transform = `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px)`;
         });
@@ -316,8 +642,10 @@ class SnowSlideTPSMasterEngine {
         };
         joystickBase.addEventListener('pointerup', endJoystick);
         joystickBase.addEventListener('pointercancel', endJoystick);
-        // Câmera Órbita 360°
+        // Câmera Órbita 360° (Apenas ativa no Hub)
         window.addEventListener('pointerdown', (e) => {
+            if (this.currentScene !== 'HUB')
+                return;
             const target = e.target;
             if (target && (target.closest('#hub-ui') || target.closest('#joystick-ui') || target.closest('#jump-btn') || target.closest('button') || target.closest('input')))
                 return;
@@ -327,6 +655,8 @@ class SnowSlideTPSMasterEngine {
             this.previousTouchY = e.clientY;
         });
         window.addEventListener('pointermove', (e) => {
+            if (this.currentScene !== 'HUB')
+                return;
             if (!this.isDragging || e.pointerId !== this.activeOrbitPointerId)
                 return;
             const deltaX = e.clientX - this.previousTouchX;
@@ -350,7 +680,7 @@ class SnowSlideTPSMasterEngine {
             e.stopPropagation();
             if (!this.isJumping) {
                 this.isJumping = true;
-                this.jumpVelY = 0.42;
+                this.jumpVelY = 0.38;
             }
         });
         window.addEventListener('keydown', (e) => {
@@ -364,7 +694,7 @@ class SnowSlideTPSMasterEngine {
                 this.keyD = true;
             if (e.key === ' ' && !this.isJumping) {
                 this.isJumping = true;
-                this.jumpVelY = 0.42;
+                this.jumpVelY = 0.38;
             }
         });
         window.addEventListener('keyup', (e) => {
@@ -377,21 +707,6 @@ class SnowSlideTPSMasterEngine {
             if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight')
                 this.keyD = false;
         });
-    }
-    addSkidMark(x, z) {
-        const markGeo = new THREE.PlaneGeometry(0.3, 0.9);
-        const markMat = new THREE.MeshBasicMaterial({ color: 0xd8eafe, transparent: true, opacity: 0.6 });
-        const mark = new THREE.Mesh(markGeo, markMat);
-        mark.rotation.x = -Math.PI / 2;
-        mark.position.set(x, -2.48, z);
-        this.scene.add(mark);
-        this.skidMarks.push({ mesh: mark, createdAt: Date.now() });
-        if (this.skidMarks.length > 50) {
-            const old = this.skidMarks.shift();
-            this.scene.remove(old.mesh);
-            old.mesh.geometry.dispose();
-            old.mesh.material.dispose();
-        }
     }
     // ==========================================
     // GAME LOOP PRINCIPAL (60 FPS)
@@ -411,7 +726,7 @@ class SnowSlideTPSMasterEngine {
         if (this.currentScene === 'HUB') {
             const speed = 0.22;
             if (Math.abs(inputForward) > 0.05 || Math.abs(inputLateral) > 0.05) {
-                // CORREÇÃO DA ORIENTAÇÃO: inputForward positivo avança na direção para onde a câmera aponta
+                // Direção da Câmera no Hub
                 const forward = new THREE.Vector3(-Math.sin(this.cameraAngleY), 0, -Math.cos(this.cameraAngleY));
                 const lateral = new THREE.Vector3(Math.cos(this.cameraAngleY), 0, -Math.sin(this.cameraAngleY));
                 const moveDir = new THREE.Vector3()
@@ -421,7 +736,12 @@ class SnowSlideTPSMasterEngine {
                 this.playerPosX += moveDir.x * speed;
                 this.playerPosZ += moveDir.z * speed;
                 this.playerGroup.rotation.y = Math.atan2(moveDir.x, moveDir.z);
+                if (this.playerPosY === 0) {
+                    this.addSkidMark(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
+                    this.emitSnowSpray(1, 0);
+                }
             }
+            this.updateSnowSpray();
             if (this.isJumping) {
                 this.playerPosY += this.jumpVelY;
                 this.jumpVelY -= 0.025;
@@ -429,12 +749,13 @@ class SnowSlideTPSMasterEngine {
                     this.playerPosY = 0;
                     this.isJumping = false;
                     this.jumpVelY = 0;
+                    this.emitSnowSpray(8, 0);
                 }
             }
             this.playerPosX = Math.max(-120, Math.min(120, this.playerPosX));
             this.playerPosZ = Math.max(-120, Math.min(120, this.playerPosZ));
             this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
-            // Câmera Órbita 360° Simultânea
+            // Câmera Órbita 360° do Hub
             const camX = this.playerPosX + Math.sin(this.cameraAngleY) * (this.cameraDistance * Math.cos(this.cameraAngleX));
             const camZ = this.playerPosZ + Math.cos(this.cameraAngleY) * (this.cameraDistance * Math.cos(this.cameraAngleX));
             const camY = this.playerPosY + Math.sin(this.cameraAngleX) * this.cameraDistance + 2;
@@ -450,58 +771,110 @@ class SnowSlideTPSMasterEngine {
             }
         }
         else if (this.currentScene === 'RACING') {
-            const acceleration = 0.004;
-            if (this.playerVelZ < 1.4)
-                this.playerVelZ += acceleration;
-            const steeringSensitivity = 0.28;
-            this.playerVelX += inputLateral * steeringSensitivity;
+            // FÍSICA DE DESCIDA BALANCEADA (Estilo Sledding Game)
+            const baseCruise = 0.48;
+            if (this.playerVelZ < baseCruise) {
+                this.playerVelZ += 0.0015;
+            }
+            // W / Analógico Cima: Projeção aerodinâmica (boost suave até 0.68)
+            // S / Analógico Baixo: Frenagem na neve (spray de neve até 0.18)
             if (inputForward > 0.1) {
-                this.playerVelZ += 0.01;
+                this.playerVelZ = Math.min(0.68, this.playerVelZ + 0.004);
             }
             else if (inputForward < -0.1) {
-                this.playerVelZ = Math.max(0.4, this.playerVelZ - 0.015);
+                this.playerVelZ = Math.max(0.18, this.playerVelZ - 0.012);
+                this.emitSnowSpray(3, 0);
             }
-            this.playerVelX *= 0.86;
+            // Direção lateral suave e responsiva com amortecimento de atrito
+            const steeringSensitivity = 0.042;
+            this.playerVelX += inputLateral * steeringSensitivity;
+            this.playerVelX *= 0.88;
+            this.playerVelX = Math.max(-0.45, Math.min(0.45, this.playerVelX));
             this.playerPosX += this.playerVelX;
             this.playerPosZ += this.playerVelZ;
-            if (this.playerPosX < -16) {
-                this.playerPosX = -16;
+            // Limites de pista seguros (-23.5 a +23.5)
+            if (this.playerPosX < -23.5) {
+                this.playerPosX = -23.5;
                 this.playerVelX = 0;
             }
-            if (this.playerPosX > 16) {
-                this.playerPosX = 16;
+            if (this.playerPosX > 23.5) {
+                this.playerPosX = 23.5;
                 this.playerVelX = 0;
             }
+            // Pulos e física vertical
             if (this.isJumping) {
                 this.playerPosY += this.jumpVelY;
-                this.jumpVelY -= 0.025;
+                this.jumpVelY -= 0.022;
                 if (this.playerPosY <= 0) {
                     this.playerPosY = 0;
                     this.isJumping = false;
                     this.jumpVelY = 0;
+                    this.emitSnowSpray(10, 0);
                 }
             }
+            // Animação de inclinação dinâmica do avatar
             this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
-            this.playerGroup.rotation.z = -this.playerVelX * 0.4;
-            if (Math.random() < 0.5 && this.playerPosY === 0) {
-                this.addSkidMark(this.playerPosX, this.playerPosZ);
+            this.playerGroup.rotation.z = -this.playerVelX * 0.85; // Inclinação na curva
+            this.playerGroup.rotation.y = this.playerVelX * 0.35; // Rotação suave do bico
+            this.playerGroup.rotation.x = 0.08; // Inclinação da descida
+            // Rastro duplo na neve e spray de neve contínuo
+            if (this.playerPosY === 0) {
+                this.addSkidMark(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
+                const isCarving = Math.abs(this.playerVelX) > 0.08;
+                this.emitSnowSpray(isCarving ? 2 : 1, this.playerVelX);
             }
-            this.obstacles.forEach(obs => {
+            this.updateSnowSpray();
+            // Colisão com Portais de Slalom (+100 pontos)
+            for (const gate of this.gates) {
+                if (!gate.passed && Math.abs(this.playerPosZ - gate.z) < 1.6) {
+                    if (Math.abs(this.playerPosX - gate.x) < 2.8) {
+                        gate.passed = true;
+                        this.score += 100;
+                        this.emitSnowSpray(8, 0);
+                    }
+                }
+            }
+            // Colisão com Rampas de Neve (Salto dinâmico)
+            for (const ramp of this.ramps) {
+                if (!this.isJumping && Math.abs(this.playerPosZ - ramp.z) < 2.0) {
+                    if (Math.abs(this.playerPosX - ramp.x) < 2.4) {
+                        this.isJumping = true;
+                        this.jumpVelY = 0.38;
+                        this.score += 75;
+                        this.emitSnowSpray(10, 0);
+                    }
+                }
+            }
+            // Colisão com Obstáculos (árvores e rochas)
+            for (const obs of this.obstacles) {
                 const dx = this.playerPosX - obs.x;
                 const dz = this.playerPosZ - obs.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
-                if (dist < 1.3 && this.playerPosY < 0.6) {
-                    this.playerVelZ = 0.3;
-                    this.score = Math.max(0, this.score - 100);
+                if (dist < obs.radius && this.playerPosY < 0.6) {
+                    this.playerVelZ = 0.18;
+                    this.score = Math.max(0, this.score - 50);
+                    this.emitSnowSpray(8, 0);
                 }
-            });
-            this.score += Math.round(this.playerVelZ * 8);
-            document.getElementById('score-val').innerText = this.score.toString();
-            const camX = this.playerPosX + Math.sin(this.cameraAngleY) * (this.cameraDistance * Math.cos(this.cameraAngleX) * 0.8);
-            const camZ = this.playerPosZ + Math.cos(this.cameraAngleY) * (this.cameraDistance * Math.cos(this.cameraAngleX) * 0.8);
-            const camY = this.playerPosY + Math.sin(this.cameraAngleX) * this.cameraDistance + 2;
-            this.camera.position.set(camX, camY, camZ);
-            this.camera.lookAt(this.playerPosX, this.playerPosY + 0.5, this.playerPosZ + 6);
+            }
+            // Pontuação por distância
+            this.score += Math.round(this.playerVelZ * 3.5);
+            const scoreEl = document.getElementById('score-val');
+            if (scoreEl)
+                scoreEl.innerText = this.score.toString();
+            const speedEl = document.getElementById('speed-val');
+            if (speedEl)
+                speedEl.innerText = Math.round(this.playerVelZ * 80).toString();
+            // CÂMERA CHASE DEDICADA DE 3ª PESSOA (Desacoplada de rotações do Hub)
+            const targetCamX = this.playerPosX * 0.55;
+            const targetCamY = this.playerPosY + 2.4;
+            const targetCamZ = this.playerPosZ - 5.8;
+            this.camera.position.x += (targetCamX - this.camera.position.x) * 0.12;
+            this.camera.position.y += (targetCamY - this.camera.position.y) * 0.12;
+            this.camera.position.z = targetCamZ;
+            const lookTargetX = this.playerPosX * 0.75;
+            const lookTargetY = this.playerPosY + 0.6;
+            const lookTargetZ = this.playerPosZ + 9.0;
+            this.camera.lookAt(lookTargetX, lookTargetY, lookTargetZ);
             if (this.snowParticles) {
                 this.snowParticles.position.z = this.playerPosZ;
             }
