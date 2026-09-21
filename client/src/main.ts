@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import { GameState } from '@snow-slide/shared';
 
-const GAME_VERSION = "v1.4.2-STABLE";
+const GAME_VERSION = "v1.4.3-STABLE";
 
 class SnowSlideTPSMasterEngine {
   private client!: Client;
@@ -478,7 +478,7 @@ class SnowSlideTPSMasterEngine {
 
       if (Math.abs(inputForward) > 0.05 || Math.abs(inputLateral) > 0.05) {
         // CORREÇÃO DA ORIENTAÇÃO: inputForward positivo avança na direção para onde a câmera aponta
-        const forward = new THREE.Vector3(Math.sin(this.cameraAngleY), 0, Math.cos(this.cameraAngleY));
+        const forward = new THREE.Vector3(-Math.sin(this.cameraAngleY), 0, -Math.cos(this.cameraAngleY));
         const lateral = new THREE.Vector3(Math.cos(this.cameraAngleY), 0, -Math.sin(this.cameraAngleY));
 
         const moveDir = new THREE.Vector3()

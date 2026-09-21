@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-const GAME_VERSION = "v1.4.2-STABLE";
+const GAME_VERSION = "v1.4.3-STABLE";
 class SnowSlideTPSMasterEngine {
     client;
     room;
@@ -412,7 +412,7 @@ class SnowSlideTPSMasterEngine {
             const speed = 0.22;
             if (Math.abs(inputForward) > 0.05 || Math.abs(inputLateral) > 0.05) {
                 // CORREÇÃO DA ORIENTAÇÃO: inputForward positivo avança na direção para onde a câmera aponta
-                const forward = new THREE.Vector3(Math.sin(this.cameraAngleY), 0, Math.cos(this.cameraAngleY));
+                const forward = new THREE.Vector3(-Math.sin(this.cameraAngleY), 0, -Math.cos(this.cameraAngleY));
                 const lateral = new THREE.Vector3(Math.cos(this.cameraAngleY), 0, -Math.sin(this.cameraAngleY));
                 const moveDir = new THREE.Vector3()
                     .addScaledVector(forward, inputForward)
