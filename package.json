@@ -2,8 +2,9 @@
   "name": "snow-slide-multiplayer-monorepo",
   "private": true,
   "scripts": {
-    "build": "cd client && npm install && npm run build",
-    "start": "cd server && npm start",
+    "build": "cd shared && npm install && cd ../server && npm install",
+    "build:client": "cd client && npm install && npm run build",
+    "start": "cd server && npx tsx src/index.ts",
     "dev:server": "pnpm --filter server dev",
     "dev:client": "pnpm --filter client dev",
     "test": "pnpm --filter shared test"
