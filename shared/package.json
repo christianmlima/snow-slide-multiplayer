@@ -1,7 +1,7 @@
 {
   "name": "@snow-slide/shared",
   "version": "1.0.0",
-  "main": "src/index.ts",
+  "main": "src/index.js",
   "scripts": {
     "test": "vitest run"
   },
@@ -9,6 +9,6 @@
     "vitest": "^1.6.0"
   },
   "dependencies": {
-    "@colyseus/schema": "^3.0.76"
+    "@colyseus/schema": "^2.0.37"
   }
 }
