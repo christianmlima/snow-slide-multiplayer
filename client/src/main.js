@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-const GAME_VERSION = "v1.5.0-STABLE";
+const GAME_VERSION = "v1.6.0-STABLE";
 class SnowSlideTPSMasterEngine {
     client;
     room;
@@ -15,14 +15,18 @@ class SnowSlideTPSMasterEngine {
     playerVelZ = 0;
     isJumping = false;
     jumpVelY = 0;
-    currentVehicle = 'board';
+    currentVehicle = 'sled';
     currency = 1250;
     score = 0;
     otherPlayers = new Map();
     obstacles = [];
     gates = [];
     ramps = [];
+    // Sistema Avançado de Rastro na Neve (Estilo Sledding Game)
     skidMarks = [];
+    prevTrailLeft = null;
+    prevTrailRight = null;
+    // Sistema de Spray e Poeira de Neve
     snowParticles;
     snowSprayPoints;
     sprayData = [];
@@ -64,7 +68,7 @@ class SnowSlideTPSMasterEngine {
         this.scene.add(this.snowParticles);
     }
     createSnowSpraySystem() {
-        const count = 120;
+        const count = 180;
         const geo = new THREE.BufferGeometry();
         const positions = new Float32Array(count * 3);
         for (let i = 0; i < count * 3; i++)
@@ -72,14 +76,14 @@ class SnowSlideTPSMasterEngine {
         geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         const mat = new THREE.PointsMaterial({
             color: 0xffffff,
-            size: 0.45,
+            size: 0.55,
             transparent: true,
-            opacity: 0.8
+            opacity: 0.82
         });
         this.snowSprayPoints = new THREE.Points(geo, mat);
         this.sprayData = [];
         for (let i = 0; i < count; i++) {
-            this.sprayData.push({ x: 0, y: -999, z: 0, vx: 0, vy: 0, vz: 0, life: 0 });
+            this.sprayData.push({ x: 0, y: -999, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 24 });
         }
         this.scene.add(this.snowSprayPoints);
     }
@@ -90,13 +94,16 @@ class SnowSlideTPSMasterEngine {
         for (let i = 0; i < this.sprayData.length; i++) {
             const p = this.sprayData[i];
             if (p.life <= 0) {
-                p.x = this.playerPosX + (Math.random() - 0.5) * 0.5;
+                // Ejetar a partir da cauda e laterais do trenó
+                p.x = this.playerPosX + (Math.random() - 0.5) * 0.7;
                 p.y = this.playerPosY + 0.08;
-                p.z = this.playerPosZ - 0.7;
-                p.vx = (Math.random() - 0.5) * 0.12 - lateralBoost * 0.3;
-                p.vy = 0.04 + Math.random() * 0.08;
-                p.vz = -0.12 - Math.random() * 0.15;
-                p.life = 16 + Math.floor(Math.random() * 12);
+                p.z = this.playerPosZ - 0.85;
+                // Spray lateral forte para o lado oposto da curva (carving)
+                p.vx = (Math.random() - 0.5) * 0.15 - lateralBoost * 0.38;
+                p.vy = 0.06 + Math.random() * 0.09;
+                p.vz = -0.15 - Math.random() * 0.18;
+                p.life = 18 + Math.floor(Math.random() * 14);
+                p.maxLife = p.life;
                 emitted++;
                 if (emitted >= count)
                     break;
@@ -114,7 +121,7 @@ class SnowSlideTPSMasterEngine {
                 p.x += p.vx;
                 p.y += p.vy;
                 p.z += p.vz;
-                p.vy -= 0.0035;
+                p.vy -= 0.0035; // gravidade no pó de neve
                 p.life--;
                 arr[i * 3] = p.x;
                 arr[i * 3 + 1] = p.y;
@@ -126,30 +133,82 @@ class SnowSlideTPSMasterEngine {
         }
         posAttr.needsUpdate = true;
     }
-    addSkidMark(x, y, z, headingRad) {
-        const trackGeo = new THREE.PlaneGeometry(0.18, 1.2);
+    // =========================================================================
+    // SISTEMA DE RASTRO DUPLO CONTÍNUO NA NEVE (ESTILO SLEDDING GAME)
+    // =========================================================================
+    addContinuousSnowTrail(x, y, z, rotY) {
+        const isSled = this.currentVehicle === 'sled';
         const trackMat = new THREE.MeshBasicMaterial({
-            color: 0xbae6fd,
+            color: 0x93c5fd,
             transparent: true,
-            opacity: 0.55,
+            opacity: 0.62,
             depthWrite: false
         });
-        const offset = 0.42;
-        const cosH = Math.cos(headingRad);
-        const sinH = Math.sin(headingRad);
-        const markL = new THREE.Mesh(trackGeo, trackMat);
-        markL.rotation.x = -Math.PI / 2;
-        markL.rotation.z = -headingRad;
-        markL.position.set(x - cosH * offset, y + 0.02, z + sinH * offset);
-        this.scene.add(markL);
-        this.skidMarks.push({ mesh: markL, createdAt: Date.now() });
-        const markR = new THREE.Mesh(trackGeo, trackMat);
-        markR.rotation.x = -Math.PI / 2;
-        markR.rotation.z = -headingRad;
-        markR.position.set(x + cosH * offset, y + 0.02, z - sinH * offset);
-        this.scene.add(markR);
-        this.skidMarks.push({ mesh: markR, createdAt: Date.now() });
-        while (this.skidMarks.length > 250) {
+        const cosH = Math.cos(rotY);
+        const sinH = Math.sin(rotY);
+        if (isSled) {
+            // Patim Esquerdo e Patim Direito (Trilhas paralelas perfeitas)
+            const offset = 0.46;
+            const currL = { x: x - cosH * offset, z: z + sinH * offset };
+            const currR = { x: x + cosH * offset, z: z - sinH * offset };
+            if (this.prevTrailLeft && this.prevTrailRight) {
+                const dxL = currL.x - this.prevTrailLeft.x;
+                const dzL = currL.z - this.prevTrailLeft.z;
+                const distL = Math.sqrt(dxL * dxL + dzL * dzL);
+                if (distL > 0.35 && distL < 8.0) {
+                    const angleL = Math.atan2(dxL, dzL);
+                    const geoL = new THREE.PlaneGeometry(0.14, distL + 0.04);
+                    const markL = new THREE.Mesh(geoL, trackMat);
+                    markL.rotation.x = -Math.PI / 2;
+                    markL.rotation.z = -angleL;
+                    markL.position.set((this.prevTrailLeft.x + currL.x) / 2, y + 0.02, (this.prevTrailLeft.z + currL.z) / 2);
+                    this.scene.add(markL);
+                    this.skidMarks.push({ mesh: markL, createdAt: Date.now() });
+                    const dxR = currR.x - this.prevTrailRight.x;
+                    const dzR = currR.z - this.prevTrailRight.z;
+                    const distR = Math.sqrt(dxR * dxR + dzR * dzR);
+                    const angleR = Math.atan2(dxR, dzR);
+                    const geoR = new THREE.PlaneGeometry(0.14, distR + 0.04);
+                    const markR = new THREE.Mesh(geoR, trackMat);
+                    markR.rotation.x = -Math.PI / 2;
+                    markR.rotation.z = -angleR;
+                    markR.position.set((this.prevTrailRight.x + currR.x) / 2, y + 0.02, (this.prevTrailRight.z + currR.z) / 2);
+                    this.scene.add(markR);
+                    this.skidMarks.push({ mesh: markR, createdAt: Date.now() });
+                    this.prevTrailLeft = currL;
+                    this.prevTrailRight = currR;
+                }
+            }
+            else {
+                this.prevTrailLeft = currL;
+                this.prevTrailRight = currR;
+            }
+        }
+        else {
+            // Prancha de Snowboard: rastro contínuo de carving central
+            if (this.prevTrailLeft) {
+                const dx = x - this.prevTrailLeft.x;
+                const dz = z - this.prevTrailLeft.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist > 0.35 && dist < 8.0) {
+                    const angle = Math.atan2(dx, dz);
+                    const carveWidth = 0.48 + Math.abs(this.playerVelX) * 0.4;
+                    const geo = new THREE.PlaneGeometry(carveWidth, dist + 0.04);
+                    const mark = new THREE.Mesh(geo, trackMat);
+                    mark.rotation.x = -Math.PI / 2;
+                    mark.rotation.z = -angle;
+                    mark.position.set((this.prevTrailLeft.x + x) / 2, y + 0.02, (this.prevTrailLeft.z + z) / 2);
+                    this.scene.add(mark);
+                    this.skidMarks.push({ mesh: mark, createdAt: Date.now() });
+                    this.prevTrailLeft = { x, z };
+                }
+            }
+            else {
+                this.prevTrailLeft = { x, z };
+            }
+        }
+        // Gerenciamento e reciclagem de marcas para 60 FPS estáveis
+        while (this.skidMarks.length > 350) {
             const old = this.skidMarks.shift();
             this.scene.remove(old.mesh);
             old.mesh.geometry.dispose();
@@ -163,7 +222,12 @@ class SnowSlideTPSMasterEngine {
             m.mesh.material.dispose();
         }
         this.skidMarks = [];
+        this.prevTrailLeft = null;
+        this.prevTrailRight = null;
     }
+    // =========================================================================
+    // MODELAGEM VISUAL: CENÁRIO ALPINO
+    // =========================================================================
     createSnowyPineTree() {
         const group = new THREE.Group();
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 2.0, 7), new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.9 }));
@@ -252,6 +316,210 @@ class SnowSlideTPSMasterEngine {
         group.add(base, snowCap);
         return group;
     }
+    // =========================================================================
+    // MODELAGEM VISUAL: PENGUIN & SLED AVANÇADOS (ESTILO SLEDDING GAME)
+    // =========================================================================
+    createDetailedPenguin(charType) {
+        const group = new THREE.Group();
+        const bodyColor = charType === 'penguin' ? 0x0f172a : 0xf59e0b;
+        const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.4 });
+        const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
+        const orangeMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+        // 1. Corpo principal
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.44, 0.65, 14, 14), bodyMat);
+        body.position.y = 0.68;
+        body.castShadow = true;
+        group.add(body);
+        // 2. Barriguinha fofa branca
+        const belly = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14), whiteMat);
+        belly.position.set(0, 0.64, 0.24);
+        belly.scale.set(0.82, 1.05, 0.5);
+        group.add(belly);
+        // 3. Patas laranjas apoiadas
+        const footL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.38), orangeMat);
+        footL.position.set(-0.24, 0.18, 0.35);
+        footL.rotation.y = 0.2;
+        const footR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.38), orangeMat);
+        footR.position.set(0.24, 0.18, 0.35);
+        footR.rotation.y = -0.2;
+        group.add(footL, footR);
+        // 4. Asinhas / Braços (segurando para o equilíbrio)
+        const wingL = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 8), bodyMat);
+        wingL.position.set(-0.50, 0.66, 0.02);
+        wingL.rotation.set(-0.2, 0, 0.42);
+        wingL.scale.set(1.1, 1.0, 0.4);
+        const wingR = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 8), bodyMat);
+        wingR.position.set(0.50, 0.66, 0.02);
+        wingR.rotation.set(-0.2, 0, -0.42);
+        wingR.scale.set(1.1, 1.0, 0.4);
+        group.add(wingL, wingR);
+        // 5. Cabeça
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16), bodyMat);
+        head.position.y = 1.22;
+        head.castShadow = true;
+        group.add(head);
+        // 6. Bico pontiagudo laranja
+        const beak = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.32, 8), orangeMat);
+        beak.rotation.x = Math.PI / 2;
+        beak.position.set(0, 1.18, 0.44);
+        group.add(beak);
+        // 7. Olhos expressivos com brilho de desenho animado
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const pupilMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        const glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), eyeMat);
+        eyeL.position.set(-0.13, 1.28, 0.30);
+        const pupilL = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), pupilMat);
+        pupilL.position.set(-0.13, 1.28, 0.36);
+        const glintL = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), glintMat);
+        glintL.position.set(-0.11, 1.30, 0.39);
+        const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), eyeMat);
+        eyeR.position.set(0.13, 1.28, 0.30);
+        const pupilR = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), pupilMat);
+        pupilR.position.set(0.13, 1.28, 0.36);
+        const glintR = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), glintMat);
+        glintR.position.set(0.15, 1.30, 0.39);
+        group.add(eyeL, pupilL, glintL, eyeR, pupilR, glintR);
+        // 8. Bochechinhas rosadas
+        const blushMat = new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.65 });
+        const bL = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.08), blushMat);
+        bL.position.set(-0.24, 1.18, 0.28);
+        bL.rotation.y = -0.3;
+        const bR = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.08), blushMat);
+        bR.position.set(0.24, 1.18, 0.28);
+        bR.rotation.y = 0.3;
+        group.add(bL, bR);
+        // 9. Gorro de inverno vermelho com pom-pom (Ícone Sledding Game)
+        const hatMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 });
+        const hatBrimMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.8 });
+        const pomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+        const hatDome = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), hatMat);
+        hatDome.position.y = 1.35;
+        const hatBrim = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.07, 8, 20), hatBrimMat);
+        hatBrim.rotation.x = Math.PI / 2;
+        hatBrim.position.y = 1.36;
+        const pomPom = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), pomMat);
+        pomPom.position.set(0, 1.76, -0.06);
+        group.add(hatDome, hatBrim, pomPom);
+        // 10. Cachecol verde esmeralda com ponta ao vento
+        const scarfMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.7 });
+        const scarfRing = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.09, 8, 20), scarfMat);
+        scarfRing.rotation.x = Math.PI / 2;
+        scarfRing.position.y = 0.98;
+        const scarfTail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.55), scarfMat);
+        scarfTail.position.set(0.26, 0.94, -0.38);
+        scarfTail.rotation.set(-0.35, 0.25, 0);
+        group.add(scarfRing, scarfTail);
+        return group;
+    }
+    createDetailedSled() {
+        const group = new THREE.Group();
+        const steelMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.85, roughness: 0.2 });
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.55 });
+        const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 });
+        const ropeMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.8 });
+        // 1. Patins de Metal Curvados (Runners)
+        // Patim Esquerdo
+        const runnerL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 2.6), steelMat);
+        runnerL.position.set(-0.46, 0.05, 0);
+        runnerL.castShadow = true;
+        const tipL = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 14, Math.PI * 0.85), steelMat);
+        tipL.rotation.y = Math.PI / 2;
+        tipL.position.set(-0.46, 0.22, 1.32);
+        // Patim Direito
+        const runnerR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 2.6), steelMat);
+        runnerR.position.set(0.46, 0.05, 0);
+        runnerR.castShadow = true;
+        const tipR = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 14, Math.PI * 0.85), steelMat);
+        tipR.rotation.y = Math.PI / 2;
+        tipR.position.set(0.46, 0.22, 1.32);
+        group.add(runnerL, tipL, runnerR, tipR);
+        // 2. Suportes verticais (Stanchions)
+        const stanchionPositions = [
+            [-0.46, -0.7], [-0.46, 0.2], [-0.46, 0.9],
+            [0.46, -0.7], [0.46, 0.2], [0.46, 0.9]
+        ];
+        for (const [sx, sz] of stanchionPositions) {
+            const s = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.24, 6), steelMat);
+            s.position.set(sx, 0.17, sz);
+            group.add(s);
+        }
+        // 3. Pranchas de Madeira do Deck (4 tábuas longitudinais)
+        const plankX = [-0.34, -0.11, 0.11, 0.34];
+        for (const px of plankX) {
+            const plank = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.05, 2.25), woodMat);
+            plank.position.set(px, 0.29, -0.05);
+            plank.castShadow = true;
+            group.add(plank);
+        }
+        // 4. Travessas de suporte de madeira
+        const crossBarF = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.06, 0.12), darkWoodMat);
+        crossBarF.position.set(0, 0.28, 0.85);
+        const crossBarB = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.06, 0.12), darkWoodMat);
+        crossBarB.position.set(0, 0.28, -0.75);
+        group.add(crossBarF, crossBarB);
+        // 5. Barra de Direção Frontal com Corda
+        const handleBar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.92, 8), darkWoodMat);
+        handleBar.rotation.z = Math.PI / 2;
+        handleBar.position.set(0, 0.42, 1.25);
+        const ropeL = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.6, 6), ropeMat);
+        ropeL.position.set(-0.35, 0.48, 0.95);
+        ropeL.rotation.x = 0.55;
+        const ropeR = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.6, 6), ropeMat);
+        ropeR.position.set(0.35, 0.48, 0.95);
+        ropeR.rotation.x = 0.55;
+        group.add(handleBar, ropeL, ropeR);
+        return group;
+    }
+    createDetailedSnowboard() {
+        const group = new THREE.Group();
+        const boardMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
+        const stripeMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 });
+        const bindingMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
+        const edgeMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 });
+        // Deck curvado nas pontas
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.10, 2.3), boardMat);
+        deck.position.y = 0.08;
+        deck.castShadow = true;
+        // Borda metálica
+        const edge = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.04, 2.34), edgeMat);
+        edge.position.y = 0.04;
+        // Bico e cauda virados para cima
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 0.35), boardMat);
+        nose.position.set(0, 0.16, 1.25);
+        nose.rotation.x = -0.35;
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 0.35), boardMat);
+        tail.position.set(0, 0.16, -1.25);
+        tail.rotation.x = 0.35;
+        // Faixa esportiva
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.11, 2.2), stripeMat);
+        stripe.position.y = 0.08;
+        // Fixações de bota (Bindings)
+        const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.28), bindingMat);
+        b1.position.set(0, 0.16, 0.4);
+        const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.28), bindingMat);
+        b2.position.set(0, 0.16, -0.4);
+        group.add(deck, edge, nose, tail, stripe, b1, b2);
+        return group;
+    }
+    createAvatarMesh(charType, vehicleType) {
+        const group = new THREE.Group();
+        // 1. Veículo (Trenó Alpino detalhado ou Snowboard)
+        const vehicle = vehicleType === 'sled' ? this.createDetailedSled() : this.createDetailedSnowboard();
+        group.add(vehicle);
+        // 2. Personagem Penguin detalhado
+        const penguin = this.createDetailedPenguin(charType);
+        // Se estiver em trenó, senta ligeiramente mais alto no deck
+        penguin.position.y = vehicleType === 'sled' ? 0.26 : 0.08;
+        group.add(penguin);
+        return group;
+    }
+    respawnPlayerMesh() {
+        if (this.playerGroup)
+            this.scene.remove(this.playerGroup);
+        this.playerGroup = this.createAvatarMesh('penguin', this.currentVehicle);
+        this.scene.add(this.playerGroup);
+    }
     initEngine() {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0xbae6fd);
@@ -335,7 +603,7 @@ class SnowSlideTPSMasterEngine {
             tree.scale.setScalar(0.85 + Math.random() * 0.35);
             this.scene.add(tree);
         }
-        // RESET DE ESTADO E CÂMERA DO HUB
+        // RESET TOTAL DO HUB
         this.playerPosX = 0;
         this.playerPosZ = 0;
         this.playerPosY = 0;
@@ -482,7 +750,7 @@ class SnowSlideTPSMasterEngine {
         this.playerPosY = 0;
         this.playerPosZ = 0;
         this.playerVelX = 0;
-        this.playerVelZ = 0.36; // Início suave e controlado
+        this.playerVelZ = 0.36;
         this.isJumping = false;
         this.jumpVelY = 0;
         this.score = 0;
@@ -506,74 +774,6 @@ class SnowSlideTPSMasterEngine {
         document.getElementById('racing-hud').style.display = 'block';
         document.getElementById('back-hub-btn').style.display = 'block';
         document.getElementById('joystick-ui').style.display = 'block';
-    }
-    createAvatarMesh(charType, vehicleType) {
-        const group = new THREE.Group();
-        // Veículo (Prancha de Snowboard ou Trenó)
-        const vGeo = vehicleType === 'board' ? new THREE.BoxGeometry(1.3, 0.12, 2.4) : new THREE.BoxGeometry(1.6, 0.18, 2.5);
-        const vMat = new THREE.MeshStandardMaterial({
-            color: vehicleType === 'board' ? 0x0284c7 : 0xb45309,
-            roughness: 0.35
-        });
-        const vehicle = new THREE.Mesh(vGeo, vMat);
-        vehicle.position.y = 0.06;
-        vehicle.castShadow = true;
-        group.add(vehicle);
-        // Corpo do Pinguim
-        const bodyGeo = new THREE.CapsuleGeometry(0.42, 0.65, 12, 12);
-        const bodyMat = new THREE.MeshStandardMaterial({
-            color: charType === 'penguin' ? 0x0f172a : 0xf59e0b,
-            roughness: 0.4
-        });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.65;
-        body.castShadow = true;
-        group.add(body);
-        // Barriguinha branca
-        const bellyGeo = new THREE.SphereGeometry(0.35, 12, 12);
-        const bellyMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
-        const belly = new THREE.Mesh(bellyGeo, bellyMat);
-        belly.position.set(0, 0.62, 0.22);
-        belly.scale.set(0.8, 1.05, 0.5);
-        group.add(belly);
-        // Cabeça
-        const headGeo = new THREE.SphereGeometry(0.34, 16, 16);
-        const headMat = new THREE.MeshStandardMaterial({
-            color: charType === 'penguin' ? 0x0f172a : 0xf59e0b,
-            roughness: 0.4
-        });
-        const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 1.18;
-        head.castShadow = true;
-        group.add(head);
-        // Bico laranja (aponta para frente +Z)
-        const beakGeo = new THREE.ConeGeometry(0.12, 0.28, 6);
-        const beakMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
-        const beak = new THREE.Mesh(beakGeo, beakMat);
-        beak.rotation.x = Math.PI / 2;
-        beak.position.set(0, 1.15, 0.42);
-        group.add(beak);
-        // Olhos
-        const eyeGeo = new THREE.SphereGeometry(0.06, 6, 6);
-        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        const pupilGeo = new THREE.SphereGeometry(0.03, 6, 6);
-        const pupilMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
-        const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-        eyeL.position.set(-0.14, 1.25, 0.28);
-        const pL = new THREE.Mesh(pupilGeo, pupilMat);
-        pL.position.set(-0.14, 1.25, 0.33);
-        const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-        eyeR.position.set(0.14, 1.25, 0.28);
-        const pR = new THREE.Mesh(pupilGeo, pupilMat);
-        pR.position.set(0.14, 1.25, 0.33);
-        group.add(eyeL, pL, eyeR, pR);
-        return group;
-    }
-    respawnPlayerMesh() {
-        if (this.playerGroup)
-            this.scene.remove(this.playerGroup);
-        this.playerGroup = this.createAvatarMesh('penguin', this.currentVehicle);
-        this.scene.add(this.playerGroup);
     }
     setupUIAndControls() {
         const loginScreen = document.getElementById('login-screen');
@@ -674,14 +874,17 @@ class SnowSlideTPSMasterEngine {
         };
         window.addEventListener('pointerup', endOrbit);
         window.addEventListener('pointercancel', endOrbit);
-        // Botão de Pulo Dedicado
+        // FÍSICA DE SALTO MELHORADA: Pulo suave com hang-time (arco longo e flutuante)
+        const triggerJump = () => {
+            if (!this.isJumping) {
+                this.isJumping = true;
+                this.jumpVelY = this.currentScene === 'RACING' ? 0.44 : 0.40;
+            }
+        };
         const jumpBtn = document.getElementById('jump-btn');
         jumpBtn.addEventListener('pointerdown', (e) => {
             e.stopPropagation();
-            if (!this.isJumping) {
-                this.isJumping = true;
-                this.jumpVelY = 0.38;
-            }
+            triggerJump();
         });
         window.addEventListener('keydown', (e) => {
             if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp')
@@ -692,9 +895,8 @@ class SnowSlideTPSMasterEngine {
                 this.keyA = true;
             if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight')
                 this.keyD = true;
-            if (e.key === ' ' && !this.isJumping) {
-                this.isJumping = true;
-                this.jumpVelY = 0.38;
+            if (e.key === ' ') {
+                triggerJump();
             }
         });
         window.addEventListener('keyup', (e) => {
@@ -726,7 +928,7 @@ class SnowSlideTPSMasterEngine {
         if (this.currentScene === 'HUB') {
             const speed = 0.22;
             if (Math.abs(inputForward) > 0.05 || Math.abs(inputLateral) > 0.05) {
-                // Direção da Câmera no Hub
+                // Direção da Câmera no Hub (W vai para frente na direção que a câmera olha)
                 const forward = new THREE.Vector3(-Math.sin(this.cameraAngleY), 0, -Math.cos(this.cameraAngleY));
                 const lateral = new THREE.Vector3(Math.cos(this.cameraAngleY), 0, -Math.sin(this.cameraAngleY));
                 const moveDir = new THREE.Vector3()
@@ -737,14 +939,19 @@ class SnowSlideTPSMasterEngine {
                 this.playerPosZ += moveDir.z * speed;
                 this.playerGroup.rotation.y = Math.atan2(moveDir.x, moveDir.z);
                 if (this.playerPosY === 0) {
-                    this.addSkidMark(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
+                    this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
                     this.emitSnowSpray(1, 0);
                 }
             }
+            else {
+                this.prevTrailLeft = null;
+                this.prevTrailRight = null;
+            }
             this.updateSnowSpray();
+            // Física de pulo flutuante e suave no Hub
             if (this.isJumping) {
                 this.playerPosY += this.jumpVelY;
-                this.jumpVelY -= 0.025;
+                this.jumpVelY -= 0.014;
                 if (this.playerPosY <= 0) {
                     this.playerPosY = 0;
                     this.isJumping = false;
@@ -771,7 +978,9 @@ class SnowSlideTPSMasterEngine {
             }
         }
         else if (this.currentScene === 'RACING') {
-            // FÍSICA DE DESCIDA BALANCEADA (Estilo Sledding Game)
+            // =========================================================================
+            // FÍSICA DE DESCIDA BALANCEADA & CORREÇÃO DA DIREÇÃO (ESTILO SLEDDING GAME)
+            // =========================================================================
             const baseCruise = 0.48;
             if (this.playerVelZ < baseCruise) {
                 this.playerVelZ += 0.0015;
@@ -783,13 +992,16 @@ class SnowSlideTPSMasterEngine {
             }
             else if (inputForward < -0.1) {
                 this.playerVelZ = Math.max(0.18, this.playerVelZ - 0.012);
-                this.emitSnowSpray(3, 0);
+                this.emitSnowSpray(4, 0);
             }
-            // Direção lateral suave e responsiva com amortecimento de atrito
-            const steeringSensitivity = 0.042;
-            this.playerVelX += inputLateral * steeringSensitivity;
+            // CORREÇÃO CRÍTICA DE DIREÇÃO NA CORRIDA:
+            // Ao olhar para +Z na Three.js, a direita da tela é -X e a esquerda é +X.
+            // D / Analógico Direita (inputLateral > 0) -> move para a DIREITA da tela (-X).
+            // A / Analógico Esquerda (inputLateral < 0) -> move para a ESQUERDA da tela (+X).
+            const steeringSensitivity = 0.046;
+            this.playerVelX -= inputLateral * steeringSensitivity;
             this.playerVelX *= 0.88;
-            this.playerVelX = Math.max(-0.45, Math.min(0.45, this.playerVelX));
+            this.playerVelX = Math.max(-0.48, Math.min(0.48, this.playerVelX));
             this.playerPosX += this.playerVelX;
             this.playerPosZ += this.playerVelZ;
             // Limites de pista seguros (-23.5 a +23.5)
@@ -801,47 +1013,59 @@ class SnowSlideTPSMasterEngine {
                 this.playerPosX = 23.5;
                 this.playerVelX = 0;
             }
-            // Pulos e física vertical
+            // FÍSICA DE SALTO COM GRAVIDADE REALISTA E HANG-TIME (ARCO LONGO E SATISFATÓRIO)
             if (this.isJumping) {
                 this.playerPosY += this.jumpVelY;
-                this.jumpVelY -= 0.022;
+                this.jumpVelY -= 0.012; // Gravidade reduzida = pulo cinematográfico longo
+                // Inclinação dinâmica no ar (nariz sobe na decolagem e desce no pouso)
+                const pitchAngle = 0.08 - this.jumpVelY * 0.35;
+                this.playerGroup.rotation.x = pitchAngle;
+                this.playerGroup.rotation.z = -this.playerVelX * 1.1; // Manobra aérea sutil
                 if (this.playerPosY <= 0) {
                     this.playerPosY = 0;
                     this.isJumping = false;
                     this.jumpVelY = 0;
-                    this.emitSnowSpray(10, 0);
+                    this.playerGroup.rotation.x = 0.08;
+                    // Pouso com impacto satisfatório e explosão de pó de neve
+                    this.emitSnowSpray(18, 0);
                 }
             }
-            // Animação de inclinação dinâmica do avatar
+            else {
+                // Animação de inclinação dinâmica em contato com a neve
+                this.playerGroup.rotation.z = -this.playerVelX * 0.92; // Inclina para o lado da curva
+                this.playerGroup.rotation.y = this.playerVelX * 0.38; // Aponta o bico na direção do carving
+                this.playerGroup.rotation.x = 0.08; // Inclinação da descida da montanha
+            }
             this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
-            this.playerGroup.rotation.z = -this.playerVelX * 0.85; // Inclinação na curva
-            this.playerGroup.rotation.y = this.playerVelX * 0.35; // Rotação suave do bico
-            this.playerGroup.rotation.x = 0.08; // Inclinação da descida
-            // Rastro duplo na neve e spray de neve contínuo
+            // Rastro contínuo e spray de neve (apenas quando no solo)
             if (this.playerPosY === 0) {
-                this.addSkidMark(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
-                const isCarving = Math.abs(this.playerVelX) > 0.08;
-                this.emitSnowSpray(isCarving ? 2 : 1, this.playerVelX);
+                this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
+                const isCarving = Math.abs(this.playerVelX) > 0.06;
+                this.emitSnowSpray(isCarving ? 3 : 1, this.playerVelX);
+            }
+            else {
+                this.prevTrailLeft = null;
+                this.prevTrailRight = null;
             }
             this.updateSnowSpray();
             // Colisão com Portais de Slalom (+100 pontos)
             for (const gate of this.gates) {
-                if (!gate.passed && Math.abs(this.playerPosZ - gate.z) < 1.6) {
+                if (!gate.passed && Math.abs(this.playerPosZ - gate.z) < 1.8) {
                     if (Math.abs(this.playerPosX - gate.x) < 2.8) {
                         gate.passed = true;
                         this.score += 100;
-                        this.emitSnowSpray(8, 0);
+                        this.emitSnowSpray(10, 0);
                     }
                 }
             }
-            // Colisão com Rampas de Neve (Salto dinâmico)
+            // Colisão com Rampas de Neve (Salto épico com arco longo e hang-time)
             for (const ramp of this.ramps) {
                 if (!this.isJumping && Math.abs(this.playerPosZ - ramp.z) < 2.0) {
                     if (Math.abs(this.playerPosX - ramp.x) < 2.4) {
                         this.isJumping = true;
-                        this.jumpVelY = 0.38;
-                        this.score += 75;
-                        this.emitSnowSpray(10, 0);
+                        this.jumpVelY = 0.58; // Grande salto de rampa
+                        this.score += 150;
+                        this.emitSnowSpray(14, 0);
                     }
                 }
             }
@@ -853,7 +1077,7 @@ class SnowSlideTPSMasterEngine {
                 if (dist < obs.radius && this.playerPosY < 0.6) {
                     this.playerVelZ = 0.18;
                     this.score = Math.max(0, this.score - 50);
-                    this.emitSnowSpray(8, 0);
+                    this.emitSnowSpray(10, 0);
                 }
             }
             // Pontuação por distância
@@ -864,7 +1088,7 @@ class SnowSlideTPSMasterEngine {
             const speedEl = document.getElementById('speed-val');
             if (speedEl)
                 speedEl.innerText = Math.round(this.playerVelZ * 80).toString();
-            // CÂMERA CHASE DEDICADA DE 3ª PESSOA (Desacoplada de rotações do Hub)
+            // CÂMERA CHASE DEDICADA DE 3ª PESSOA
             const targetCamX = this.playerPosX * 0.55;
             const targetCamY = this.playerPosY + 2.4;
             const targetCamZ = this.playerPosZ - 5.8;
