@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import { GameState } from '@snow-slide/shared';
 
-const GAME_VERSION = "v2.3.0-STABLE";
+const GAME_VERSION = "v2.4.0-STABLE";
 
 type CharacterId = 'penguin' | 'frog' | 'cat' | 'dog';
 
@@ -174,7 +174,7 @@ class SnowSlideTPSMasterEngine {
 
   // Minigame 1: Estande de Tiro ao Alvo do Festival
   private nearCarnivalBooth = false;
-  private carnivalBoothPos = new THREE.Vector3(18, 0, 16);
+  private carnivalBoothPos = new THREE.Vector3(42, 0, -12);
   private carnivalTargets: CarnivalTarget[] = [];
   private shootingScore = 0;
   private shootingHits = 0;
@@ -186,7 +186,7 @@ class SnowSlideTPSMasterEngine {
 
   // Minigame 2: Arena de Guerra de Bolas de Neve
   private nearSnowballWarPortal = false;
-  private snowballWarPortalPos = new THREE.Vector3(-32, 0, 16);
+  private snowballWarPortalPos = new THREE.Vector3(-52, 0, 8);
   private warBots: WarBot[] = [];
   private warObstacles: WarObstacle[] = [];
   private warPlayerHealth = 3;
@@ -229,21 +229,21 @@ class SnowSlideTPSMasterEngine {
   private nearPhoneBooth = false;
   private nearCableCar = false;
 
-  // Posições de Interação no Hub
-  private garagePos = new THREE.Vector3(-24, 0, -18);
-  private garageCounterPos = new THREE.Vector3(-24, 0, -15.5);
+  // Posições de Interação no Hub (Vila Alpina Expandida & Arejada)
+  private garagePos = new THREE.Vector3(-44, 0, -28);
+  private garageCounterPos = new THREE.Vector3(-44, 0, -29);
 
-  private hatShopPos = new THREE.Vector3(-24, 0, 18);
-  private hatShopCounterPos = new THREE.Vector3(-24, 0, 15.5);
+  private hatShopPos = new THREE.Vector3(-44, 0, 38);
+  private hatShopCounterPos = new THREE.Vector3(-44, 0, 39);
 
-  private atelierPos = new THREE.Vector3(6, 0, 24);
-  private atelierCounterPos = new THREE.Vector3(6, 0, 21.5);
+  private atelierPos = new THREE.Vector3(12, 0, 44);
+  private atelierCounterPos = new THREE.Vector3(12, 0, 45);
 
-  private tavernPos = new THREE.Vector3(26, 0, 14);
-  private recordsBoardPos = new THREE.Vector3(26, 0, 12);
+  private tavernPos = new THREE.Vector3(46, 0, 16);
+  private recordsBoardPos = new THREE.Vector3(51, 0, 16);
 
-  private phoneBoothPos = new THREE.Vector3(8, 0, -4);
-  private cableCarStationPos = new THREE.Vector3(22, 0, -18);
+  private phoneBoothPos = new THREE.Vector3(14, 0, -10);
+  private cableCarStationPos = new THREE.Vector3(42, 0, -42);
 
   // Membros do Personagem do Jogador para Animação Procedural
   private charTorso!: THREE.Group;
@@ -2243,24 +2243,37 @@ class SnowSlideTPSMasterEngine {
     wallColor: number,
     roofColor: number,
     signText: string,
-    shopType: 'garage' | 'hats' | 'atelier' | 'tavern'
+    shopType: 'garage' | 'hats' | 'atelier' | 'tavern',
+    rotY: number = 0
   ): THREE.Group {
     const lodge = new THREE.Group();
     const woodMat = new THREE.MeshStandardMaterial({ color: wallColor, roughness: 0.8 });
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.7 });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.75 });
     const roofMat = new THREE.MeshStandardMaterial({ color: roofColor, roughness: 0.6 });
     const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.95 });
-    const counterMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.7 });
+    const counterMat = new THREE.MeshStandardMaterial({ color: 0x3b1c06, roughness: 0.7 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.25 });
+    const ironMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.4 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.6, roughness: 0.1, transparent: true, opacity: 0.6 });
 
     const wallThickness = 0.8;
-    const wallHeight = 7.0;
-    const doorWidth = 4.2;
+    const wallHeight = 8.5;
+    const doorWidth = 6.4;
+    const doorHeight = 5.5;
 
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(width - 0.4, 0.3, depth - 0.4), floorMat);
-    floor.position.set(0, 0.15, 0);
+    // Piso interior em tábuas de pinho alpino
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(width - 0.2, 0.35, depth - 0.2), floorMat);
+    floor.position.set(0, 0.175, 0);
     floor.receiveShadow = true;
     lodge.add(floor);
 
+    // Deck de entrada / varanda frontal acolhedora
+    const porch = new THREE.Mesh(new THREE.BoxGeometry(doorWidth + 2.0, 0.3, 2.8), floorMat);
+    porch.position.set(0, 0.15, depth * 0.5 + 1.4);
+    porch.receiveShadow = true;
+    lodge.add(porch);
+
+    // Paredes principais
     const backWall = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, wallThickness), woodMat);
     backWall.position.set(0, wallHeight * 0.5, -depth * 0.5 + wallThickness * 0.5);
     backWall.castShadow = true;
@@ -2276,6 +2289,7 @@ class SnowSlideTPSMasterEngine {
     rightWall.castShadow = true;
     lodge.add(rightWall);
 
+    // Parede frontal segmentada com pórtico de passagem amplo (6.4m de abertura)
     const frontSegmentWidth = (width - doorWidth) * 0.5;
     const frontLeft = new THREE.Mesh(new THREE.BoxGeometry(frontSegmentWidth, wallHeight, wallThickness), woodMat);
     frontLeft.position.set(-doorWidth * 0.5 - frontSegmentWidth * 0.5, wallHeight * 0.5, depth * 0.5 - wallThickness * 0.5);
@@ -2285,127 +2299,350 @@ class SnowSlideTPSMasterEngine {
     frontRight.position.set(doorWidth * 0.5 + frontSegmentWidth * 0.5, wallHeight * 0.5, depth * 0.5 - wallThickness * 0.5);
     frontRight.castShadow = true;
 
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, wallHeight - 4.5, wallThickness), woodMat);
-    lintel.position.set(0, wallHeight - (wallHeight - 4.5) * 0.5, depth * 0.5 - wallThickness * 0.5);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, wallHeight - doorHeight, wallThickness), woodMat);
+    lintel.position.set(0, wallHeight - (wallHeight - doorHeight) * 0.5, depth * 0.5 - wallThickness * 0.5);
     lodge.add(frontLeft, frontRight, lintel);
 
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * 0.78, 5.2, 4), roofMat);
-    roof.position.y = wallHeight + 2.5;
+    // Toldo / Cobertura frontal da entrada
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(doorWidth + 1.2, 0.35, 2.6), roofMat);
+    canopy.position.set(0, doorHeight + 0.3, depth * 0.5 + 1.1);
+    canopy.rotation.x = 0.18;
+    const canopySnow = new THREE.Mesh(new THREE.BoxGeometry(doorWidth + 1.4, 0.25, 2.8), snowMat);
+    canopySnow.position.set(0, doorHeight + 0.55, depth * 0.5 + 1.1);
+    canopySnow.rotation.x = 0.18;
+    lodge.add(canopy, canopySnow);
+
+    // Placa entalhada de boas-vindas na fachada frontal
+    const facadeBoard = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 1.2, 1.1, 0.18), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.85 }));
+    facadeBoard.position.set(0, doorHeight + 1.4, depth * 0.5 + 0.12);
+    const facadeBoardTrim = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 1.0, 1.25, 0.12), goldMat);
+    facadeBoardTrim.position.set(0, doorHeight + 1.4, depth * 0.5 + 0.08);
+    lodge.add(facadeBoard, facadeBoardTrim);
+
+    // Telhado monumental em estilo alpino com espessa camada de neve
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * 0.82, 6.4, 4), roofMat);
+    roof.position.y = wallHeight + 3.1;
     roof.rotation.y = Math.PI / 4;
     roof.castShadow = true;
 
-    const snowCap = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * 0.81, 1.4, 4), snowMat);
-    snowCap.position.y = wallHeight + 3.2;
+    const snowCap = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * 0.86, 2.0, 4), snowMat);
+    snowCap.position.y = wallHeight + 4.1;
     snowCap.rotation.y = Math.PI / 4;
     lodge.add(roof, snowCap);
 
-    const counter = new THREE.Mesh(new THREE.BoxGeometry(5.4, 1.3, 1.2), counterMat);
-    counter.position.set(0, 0.65, 0.5);
-    counter.castShadow = true;
-    lodge.add(counter);
+    // Iluminação aconchegante interior
+    const chandelierLight = new THREE.PointLight(0xfef08a, 2.2, 26);
+    chandelierLight.position.set(0, 6.8, 0);
+    lodge.add(chandelierLight);
 
-    const warmLight = new THREE.PointLight(0xfef08a, 1.6, 18);
-    warmLight.position.set(0, 5.0, 0);
-    lodge.add(warmLight);
+    // Balcão de atendimento e interações (para garagens e boutiques)
+    if (shopType !== 'tavern') {
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(6.2, 1.35, 1.2), counterMat);
+      counter.position.set(0, 0.675, -2.5);
+      counter.castShadow = true;
+      const counterTrim = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.15, 1.3), goldMat);
+      counterTrim.position.set(0, 1.35, -2.5);
+      lodge.add(counter, counterTrim);
+
+      const counterWarmLight = new THREE.PointLight(0xfef08a, 1.6, 14);
+      counterWarmLight.position.set(0, 3.8, -2.5);
+      lodge.add(counterWarmLight);
+    }
 
     if (shopType === 'garage') {
-      for (const side of [-1, 1]) {
-        const wallBoard = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.2, 0.45), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
-        wallBoard.position.set(side * (width * 0.5 - 0.7), 3.0, -1.0);
-        wallBoard.rotation.z = side * 0.2;
-        lodge.add(wallBoard);
+      // Tapete/passarela de borracha e metal no centro
+      const runnerMat = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.04, depth - 4.0), new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 }));
+      runnerMat.position.set(0, 0.20, 1.0);
+      lodge.add(runnerMat);
+
+      // Bancada de trabalho pesada do mecânico (lado esquerdo)
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 4.4), new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 }));
+      bench.position.set(-width * 0.5 + 1.2, 0.6, 0.5);
+      const vise = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.45), ironMat);
+      vise.position.set(-width * 0.5 + 1.8, 1.35, 1.8);
+      const blueprint = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 1.2), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
+      blueprint.position.set(-width * 0.5 + 1.3, 1.23, 0.2);
+      blueprint.rotation.y = 0.2;
+      const workLantern = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.45, 8), goldMat);
+      workLantern.position.set(-width * 0.5 + 1.2, 1.45, -1.0);
+      lodge.add(bench, vise, blueprint, workLantern);
+
+      // Painel de ferramentas perfurado na parede esquerda
+      const pegboard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.6, 4.2), new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.7 }));
+      pegboard.position.set(-width * 0.5 + 0.48, 3.4, 0.5);
+      lodge.add(pegboard);
+
+      // Racks de Snowboards e Trenós na parede direita
+      const boardColors = [0x06b6d4, 0xf97316, 0xa855f7, 0xfacc15];
+      for (let i = 0; i < 4; i++) {
+        const sb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.6, 0.5), new THREE.MeshStandardMaterial({ color: boardColors[i], metalness: 0.5, roughness: 0.2 }));
+        sb.position.set(width * 0.5 - 0.55, 2.8, -3.0 + i * 2.2);
+        sb.rotation.z = 0.18;
+        sb.rotation.x = -0.15 + i * 0.1;
+        lodge.add(sb);
       }
+
+      // Tambores de óleo e caixas de madeira empilhadas nos cantos
+      for (const [bx, bz, bColor] of [[width * 0.5 - 1.8, 4.5, 0xd97706], [width * 0.5 - 2.8, 5.0, 0x475569]]) {
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.2, 12), new THREE.MeshStandardMaterial({ color: bColor, metalness: 0.6, roughness: 0.4 }));
+        barrel.position.set(bx, 0.6, bz);
+        lodge.add(barrel);
+      }
+      for (const [cx, cz, cy, sz] of [[-width * 0.5 + 1.8, 4.2, 0.45, 0.9], [-width * 0.5 + 2.8, 4.5, 0.4, 0.8], [-width * 0.5 + 2.0, 4.2, 1.2, 0.7]]) {
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.85 }));
+        crate.position.set(cx, cy, cz);
+        lodge.add(crate);
+      }
+
+      // Ralph, o Mestre Mecânico
       this.npcRalph = this.createMerchantRalph();
-      this.npcRalph.position.set(0, 0.15, -1.5);
+      this.npcRalph.position.set(0, 0.175, -4.5);
       lodge.add(this.npcRalph);
 
     } else if (shopType === 'hats') {
-      const carpet = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.05, depth - 2.0), new THREE.MeshStandardMaterial({ color: 0xb91c1c }));
-      carpet.position.set(0, 0.22, 0);
-      lodge.add(carpet);
+      // Tapete nobre vermelho imperial com frisos dourados
+      const redCarpet = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.05, depth - 2.5), new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.7 }));
+      redCarpet.position.set(0, 0.20, 1.0);
+      const goldTrimL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.06, depth - 2.5), goldMat);
+      goldTrimL.position.set(-2.0, 0.21, 1.0);
+      const goldTrimR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.06, depth - 2.5), goldMat);
+      goldTrimR.position.set(2.0, 0.21, 1.0);
+      lodge.add(redCarpet, goldTrimL, goldTrimR);
 
-      const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, 1.4, 8), new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8 }));
-      stand.position.set(-3.2, 0.7, -1.2);
-      const mHead = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 12), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
-      mHead.position.set(-3.2, 1.6, -1.2);
-      lodge.add(stand, mHead);
+      // 3 Pedestais de luxo com chapéus em exibição
+      // Pedestal 1: Coroa Real Dourada
+      const ped1 = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 1.4, 16), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 }));
+      ped1.position.set(-4.5, 0.7, 0.5);
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.28, 0.4, 8), goldMat);
+      crown.position.set(-4.5, 1.6, 0.5);
+      lodge.add(ped1, crown);
 
+      // Pedestal 2: Cartola Vitoriana Elegante
+      const ped2 = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 1.4, 16), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 }));
+      ped2.position.set(-4.5, 0.7, 3.8);
+      const topHat = new THREE.Group();
+      const thBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.06, 16), ironMat);
+      const thCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.55, 16), ironMat);
+      thCrown.position.y = 0.28;
+      topHat.add(thBrim, thCrown);
+      topHat.position.set(-4.5, 1.5, 3.8);
+      lodge.add(ped2, topHat);
+
+      // Pedestal 3: Gorro de Inverno Felpudo
+      const ped3 = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 1.4, 16), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 }));
+      ped3.position.set(4.5, 0.7, 3.8);
+      const beanie = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 12), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
+      beanie.position.set(4.5, 1.6, 3.8);
+      lodge.add(ped3, beanie);
+
+      // Arara e guarda-roupa de casacos de pele de inverno
+      const wardrobe = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3.8, 3.4), new THREE.MeshStandardMaterial({ color: 0x4c0519, roughness: 0.7 }));
+      wardrobe.position.set(width * 0.5 - 1.2, 1.9, 0.5);
+      lodge.add(wardrobe);
+
+      // Espelho dourado de corpo inteiro na parede esquerda
+      const mirrorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.6, 1.8), goldMat);
+      mirrorFrame.position.set(-width * 0.5 + 0.48, 2.5, -2.5);
+      const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.14, 3.2, 1.4), new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95, roughness: 0.05 }));
+      mirrorGlass.position.set(-width * 0.5 + 0.48, 2.5, -2.5);
+      lodge.add(mirrorFrame, mirrorGlass);
+
+      // Babette, a Estilista de Alta Moda
       this.npcBabette = this.createMerchantBabette();
-      this.npcBabette.position.set(0, 0.15, -1.5);
+      this.npcBabette.position.set(0, 0.175, -4.5);
       lodge.add(this.npcBabette);
 
     } else if (shopType === 'atelier') {
-      const displayCase = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.1, 0.8), new THREE.MeshStandardMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 }));
-      displayCase.position.set(-3.4, 0.55, 0.2);
-      lodge.add(displayCase);
+      // Tapete de lã entrelaçado com design alpino
+      const woolRug = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.04, 6.0), new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.85 }));
+      woolRug.position.set(0, 0.20, 1.5);
+      lodge.add(woolRug);
 
+      // Mesa de alfaiataria com cortes de tecidos e tesouras de latão
+      const tailorTable = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.25, 4.0), new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.75 }));
+      tailorTable.position.set(-width * 0.5 + 1.2, 0.625, 1.5);
+      const fabricRoll = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.4, 12), new THREE.MeshStandardMaterial({ color: 0x059669 }));
+      fabricRoll.rotation.z = Math.PI / 2;
+      fabricRoll.position.set(-width * 0.5 + 1.2, 1.35, 1.0);
+      const shears = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.5), goldMat);
+      shears.position.set(-width * 0.5 + 1.2, 1.28, 2.4);
+      shears.rotation.y = 0.6;
+      lodge.add(tailorTable, fabricRoll, shears);
+
+      // Prateleiras repletas de novelos de lã coloridos
+      const woolColors = [0xdc2626, 0x2563eb, 0xfacc15, 0xa855f7, 0x10b981];
+      for (let s = 0; s < 3; s++) {
+        const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 3.6), woodMat);
+        shelf.position.set(-width * 0.5 + 0.65, 2.2 + s * 1.1, -2.5);
+        lodge.add(shelf);
+        for (let w = 0; w < 4; w++) {
+          const yarnBall = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), new THREE.MeshStandardMaterial({ color: woolColors[(s * 2 + w) % woolColors.length], roughness: 0.9 }));
+          yarnBall.position.set(-width * 0.5 + 0.65, 2.5 + s * 1.1, -3.8 + w * 0.9);
+          lodge.add(yarnBall);
+        }
+      }
+
+      // 2 Vitrines modernas para óculos de neve translúcidos
+      for (const vz of [0.5, 3.8]) {
+        const caseBase = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 2.0), woodMat);
+        caseBase.position.set(width * 0.5 - 1.2, 0.45, vz);
+        const glassTop = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.8, 1.9), glassMat);
+        glassTop.position.set(width * 0.5 - 1.2, 1.3, vz);
+        const goggle = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 8, 16), new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.9, roughness: 0.1 }));
+        goggle.position.set(width * 0.5 - 1.2, 1.25, vz);
+        goggle.rotation.x = Math.PI / 2;
+        lodge.add(caseBase, glassTop, goggle);
+      }
+
+      // Lareira rústica de ferro fundido com chaleira no canto
+      const stove = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 1.4, 10), ironMat);
+      stove.position.set(width * 0.5 - 1.6, 0.7, -4.2);
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, wallHeight - 1.4, 8), ironMat);
+      pipe.position.set(width * 0.5 - 1.6, 0.7 + (wallHeight - 1.4) * 0.5, -4.2);
+      const stoveGlow = new THREE.PointLight(0xf97316, 2.0, 8);
+      stoveGlow.position.set(width * 0.5 - 1.6, 0.8, -3.8);
+      lodge.add(stove, pipe, stoveGlow);
+
+      // Boris, o Mestre Alfaiate
       this.npcBoris = this.createMerchantBoris();
-      this.npcBoris.position.set(0, 0.15, -1.5);
+      this.npcBoris.position.set(0, 0.175, -4.5);
       lodge.add(this.npcBoris);
 
     } else if (shopType === 'tavern') {
-      const posterBoard = new THREE.Mesh(new THREE.BoxGeometry(6.4, 3.2, 0.15), new THREE.MeshStandardMaterial({ color: 0x451a03 }));
-      posterBoard.position.set(0, 3.6, -depth * 0.5 + 0.45);
-      
-      const posterGoldTrim = new THREE.Mesh(new THREE.BoxGeometry(6.6, 3.4, 0.08), new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85 }));
-      posterGoldTrim.position.set(0, 3.6, -depth * 0.5 + 0.4);
+      // Tapete de couro rústico no centro
+      const tavernRug = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.04, 8.0), new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.9 }));
+      tavernRug.position.set(0, 0.20, 1.0);
+      lodge.add(tavernRug);
 
-      const trophyCup = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.15, 0.7, 10), new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.9 }));
-      trophyCup.position.set(0, 1.7, 0.5);
+      // Monumental Lareira de Pedra na parede direita
+      const fireplace = new THREE.Mesh(new THREE.BoxGeometry(2.2, 4.8, 4.6), new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.95 }));
+      fireplace.position.set(width * 0.5 - 1.4, 2.4, 0);
+      const hearthOpening = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.0, 2.6), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+      hearthOpening.position.set(width * 0.5 - 1.5, 1.2, 0);
+      const logs = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 2.0, 6), new THREE.MeshStandardMaterial({ color: 0x451a03 }));
+      logs.rotation.z = Math.PI / 2;
+      logs.position.set(width * 0.5 - 1.3, 0.4, 0);
+      const fireGlow = new THREE.PointLight(0xf97316, 3.5, 20);
+      fireGlow.position.set(width * 0.5 - 2.0, 1.5, 0);
+      lodge.add(fireplace, hearthOpening, logs, fireGlow);
 
-      lodge.add(posterBoard, posterGoldTrim, trophyCup);
+      // Mural de Recordes & Hall da Fama no fundo
+      const boardW = 9.2;
+      const boardH = 4.2;
+      const boardFrame = new THREE.Mesh(new THREE.BoxGeometry(boardW + 0.4, boardH + 0.4, 0.18), goldMat);
+      boardFrame.position.set(0, 4.5, -depth * 0.5 + 0.35);
+
+      // Canvas em alta resolução do quadro de recordes da taverna
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#1e1b18';
+      ctx.fillRect(0, 0, 1024, 512);
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 14;
+      ctx.strokeRect(10, 10, 1004, 492);
+      ctx.fillStyle = '#facc15';
+      ctx.font = 'bold 38px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🏆 TAVERNA DOS CAMPEÕES - HALL DA FAMA 🏆', 512, 70);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 26px "Segoe UI", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('🏔️ DESCIDA DA MONTANHA:  0:42.15 (PIP)', 80, 160);
+      ctx.fillText('🎯 TIRO AO ALVO FESTIVO: 1,450 PTS (MIMI)', 80, 230);
+      ctx.fillText('❄️ ARENA GUERRA DE NEVE:  8 K.O.s (BORIS)', 80, 300);
+      ctx.fillText('✨ CAMPEÃO VIGENTE:       VILAREJO UNIDO', 80, 370);
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'italic 22px "Segoe UI", sans-serif';
+      ctx.fillText('Pressione [E] ou aproxime-se para registrar novos recordes!', 80, 440);
+
+      const recordTex = new THREE.CanvasTexture(canvas);
+      const recordBoardMesh = new THREE.Mesh(new THREE.PlaneGeometry(boardW, boardH), new THREE.MeshBasicMaterial({ map: recordTex }));
+      recordBoardMesh.position.set(0, 4.5, -depth * 0.5 + 0.46);
+      lodge.add(boardFrame, recordBoardMesh);
+
+      // 2 Armários de Troféus com Taças Reluzentes
+      for (const side of [-1, 1]) {
+        const cabinet = new THREE.Mesh(new THREE.BoxGeometry(2.2, 4.2, 0.9), new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.7 }));
+        cabinet.position.set(side * 6.8, 2.1, -depth * 0.5 + 0.8);
+        const glass = new THREE.Mesh(new THREE.BoxGeometry(2.0, 3.8, 0.1), glassMat);
+        glass.position.set(side * 6.8, 2.1, -depth * 0.5 + 1.28);
+        const trophy = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.15, 0.9, 12), goldMat);
+        trophy.position.set(side * 6.8, 2.2, -depth * 0.5 + 0.8);
+        lodge.add(cabinet, glass, trophy);
+      }
+
+      // Mesas e bancos da taverna
+      for (const [tx, tz] of [[-4.2, 1.8], [-4.2, -2.4]]) {
+        const table = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 0.14, 16), woodMat);
+        table.position.set(tx, 1.15, tz);
+        const tableLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 1.1, 8), woodMat);
+        tableLeg.position.set(tx, 0.55, tz);
+        const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.35, 8), new THREE.MeshStandardMaterial({ color: 0xb45309 }));
+        mug.position.set(tx + 0.2, 1.35, tz + 0.1);
+        lodge.add(table, tableLeg, mug);
+
+        // 3 Barstools por mesa
+        for (let a = 0; a < 3; a++) {
+          const ang = (a / 3) * Math.PI * 2;
+          const stool = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.7, 10), woodMat);
+          stool.position.set(tx + Math.cos(ang) * 1.8, 0.35, tz + Math.sin(ang) * 1.8);
+          lodge.add(stool);
+        }
+      }
     }
 
     lodge.position.set(centerX, 0, centerZ);
+    lodge.rotation.y = rotY;
 
-    this.hubColliders.push({
-      type: 'box',
-      x: centerX,
-      z: centerZ - depth * 0.5 + wallThickness * 0.5,
-      hw: width * 0.5,
-      hd: wallThickness * 0.5,
-      angle: 0
-    });
-    this.hubColliders.push({
-      type: 'box',
-      x: centerX - width * 0.5 + wallThickness * 0.5,
-      z: centerZ,
-      hw: wallThickness * 0.5,
-      hd: depth * 0.5,
-      angle: 0
-    });
-    this.hubColliders.push({
-      type: 'box',
-      x: centerX + width * 0.5 - wallThickness * 0.5,
-      z: centerZ,
-      hw: wallThickness * 0.5,
-      hd: depth * 0.5,
-      angle: 0
-    });
-    this.hubColliders.push({
-      type: 'box',
-      x: centerX - doorWidth * 0.5 - frontSegmentWidth * 0.5,
-      z: centerZ + depth * 0.5 - wallThickness * 0.5,
-      hw: frontSegmentWidth * 0.5,
-      hd: wallThickness * 0.5,
-      angle: 0
-    });
-    this.hubColliders.push({
-      type: 'box',
-      x: centerX + doorWidth * 0.5 + frontSegmentWidth * 0.5,
-      z: centerZ + depth * 0.5 - wallThickness * 0.5,
-      hw: frontSegmentWidth * 0.5,
-      hd: wallThickness * 0.5,
-      angle: 0
-    });
-    this.hubColliders.push({
-      type: 'box',
-      x: centerX,
-      z: centerZ + 0.5,
-      hw: 2.7,
-      hd: 0.6,
-      angle: 0
-    });
+    // Helper para adicionar colisores de caixa locais rotacionados para o mundo
+    const addRotatedCollider = (localX: number, localZ: number, hw: number, hd: number) => {
+      const cosA = Math.cos(rotY);
+      const sinA = Math.sin(rotY);
+      const worldX = centerX + (localX * cosA + localZ * sinA);
+      const worldZ = centerZ + (-localX * sinA + localZ * cosA);
+      this.hubColliders.push({
+        type: 'box',
+        x: worldX,
+        z: worldZ,
+        hw,
+        hd,
+        angle: rotY
+      });
+    };
+
+    // 1. Parede do fundo
+    addRotatedCollider(0, -depth * 0.5 + wallThickness * 0.5, width * 0.5, wallThickness * 0.5);
+
+    // 2. Parede esquerda
+    addRotatedCollider(-width * 0.5 + wallThickness * 0.5, 0, wallThickness * 0.5, depth * 0.5);
+
+    // 3. Parede direita
+    addRotatedCollider(width * 0.5 - wallThickness * 0.5, 0, wallThickness * 0.5, depth * 0.5);
+
+    // 4. Parede frontal esquerda
+    addRotatedCollider(-doorWidth * 0.5 - frontSegmentWidth * 0.5, depth * 0.5 - wallThickness * 0.5, frontSegmentWidth * 0.5, wallThickness * 0.5);
+
+    // 5. Parede frontal direita
+    addRotatedCollider(doorWidth * 0.5 + frontSegmentWidth * 0.5, depth * 0.5 - wallThickness * 0.5, frontSegmentWidth * 0.5, wallThickness * 0.5);
+
+    // 6. Colisores interiores específicos
+    if (shopType !== 'tavern') {
+      // Balcão
+      addRotatedCollider(0, -2.5, 3.1, 0.6);
+    } else {
+      // Lareira de pedra
+      addRotatedCollider(width * 0.5 - 1.4, 0, 1.2, 2.4);
+      // Mesas redondas da taverna
+      const cosA = Math.cos(rotY);
+      const sinA = Math.sin(rotY);
+      for (const [tx, tz] of [[-4.2, 1.8], [-4.2, -2.4]]) {
+        const wx = centerX + (tx * cosA + tz * sinA);
+        const wz = centerZ + (-tx * sinA + tz * cosA);
+        this.hubColliders.push({ type: 'circle', x: wx, z: wz, r: 1.4 });
+      }
+    }
 
     return lodge;
   }
@@ -2419,7 +2656,7 @@ class SnowSlideTPSMasterEngine {
   }
 
   private createMerchantBabette(): THREE.Group {
-    const babette = this.createDetailedPenguin();
+    const babette = this.createDetailedCat();
     const bow = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshStandardMaterial({ color: 0xec4899 }));
     bow.position.set(0.2, 1.5, 0.1);
     babette.add(bow);
@@ -2427,7 +2664,7 @@ class SnowSlideTPSMasterEngine {
   }
 
   private createMerchantBoris(): THREE.Group {
-    const boris = this.createDetailedPenguin();
+    const boris = this.createDetailedDog();
     const tape = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.05, 6, 16), new THREE.MeshStandardMaterial({ color: 0xfacc15 }));
     tape.rotation.x = Math.PI / 3;
     tape.position.y = 0.8;
@@ -2504,54 +2741,56 @@ class SnowSlideTPSMasterEngine {
     return booth;
   }
 
-  // Estande de Tiro ao Alvo do Festival (Circo Alpino)
-  private createCarnivalBooth(x: number, z: number): THREE.Group {
+  // Estande de Tiro ao Alvo do Festival (Circo Alpino Monumental)
+  private createCarnivalBooth(x: number, z: number, rotY: number = 0): THREE.Group {
     const booth = new THREE.Group();
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.75 });
     const redCanvasMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 });
     const whiteCanvasMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
     const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 });
 
-    // Plataforma do chão da barraca
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.4, 6.0), woodMat);
-    floor.position.y = 0.2;
+    // Plataforma do chão da barraca expandida
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(12.0, 0.45, 7.5), woodMat);
+    floor.position.y = 0.225;
     floor.receiveShadow = true;
     booth.add(floor);
 
     // Balcão de atendimento frontal
-    const counter = new THREE.Mesh(new THREE.BoxGeometry(7.6, 1.3, 0.8), woodMat);
-    counter.position.set(0, 0.95, -2.2);
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(11.0, 1.35, 1.0), woodMat);
+    counter.position.set(0, 0.95, -2.8);
     counter.castShadow = true;
-    booth.add(counter);
+    const counterTop = new THREE.Mesh(new THREE.BoxGeometry(11.4, 0.15, 1.2), goldMat);
+    counterTop.position.set(0, 1.65, -2.8);
+    booth.add(counter, counterTop);
 
     // Suporte para espingardas de brinquedo no balcão
-    for (const rx of [-2.2, 0, 2.2]) {
-      const rack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.6), woodMat);
-      rack.position.set(rx, 1.7, -2.2);
-      const rifleBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6), goldMat);
+    for (const rx of [-3.6, -1.8, 0, 1.8, 3.6]) {
+      const rack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.65), woodMat);
+      rack.position.set(rx, 1.8, -2.8);
+      const rifleBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.4, 6), goldMat);
       rifleBarrel.rotation.x = Math.PI / 2;
-      rifleBarrel.position.set(rx, 1.85, -2.1);
+      rifleBarrel.position.set(rx, 1.95, -2.7);
       booth.add(rack, rifleBarrel);
     }
 
-    // 4 Pilares de sustentação
-    for (const [px, pz] of [[-3.8, -2.6], [3.8, -2.6], [-3.8, 2.6], [3.8, 2.6]]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 4.5, 8), woodMat);
-      post.position.set(px, 2.45, pz);
+    // 6 Pilares de sustentação
+    for (const [px, pz] of [[-5.5, -3.2], [0, -3.2], [5.5, -3.2], [-5.5, 3.2], [0, 3.2], [5.5, 3.2]]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 5.2, 8), woodMat);
+      post.position.set(px, 2.8, pz);
       post.castShadow = true;
       booth.add(post);
     }
 
     // Teto listrado de circo/festival (listras alternadas vermelho e branco)
-    const stripeCount = 10;
-    const stripeWidth = 8.6 / stripeCount;
+    const stripeCount = 14;
+    const stripeWidth = 12.6 / stripeCount;
     for (let i = 0; i < stripeCount; i++) {
       const isRed = i % 2 === 0;
       const stripe = new THREE.Mesh(
-        new THREE.BoxGeometry(stripeWidth, 0.25, 6.4),
+        new THREE.BoxGeometry(stripeWidth, 0.28, 8.0),
         isRed ? redCanvasMat : whiteCanvasMat
       );
-      stripe.position.set(-4.3 + stripeWidth * (i + 0.5), 4.7, 0);
+      stripe.position.set(-6.3 + stripeWidth * (i + 0.5), 5.4, 0);
       stripe.rotation.x = 0.12;
       stripe.castShadow = true;
       booth.add(stripe);
@@ -2560,86 +2799,89 @@ class SnowSlideTPSMasterEngine {
     // Toldo frontal com babados (scalloped fringe)
     for (let i = 0; i < stripeCount; i++) {
       const fringe = new THREE.Mesh(
-        new THREE.ConeGeometry(0.42, 0.6, 4),
+        new THREE.ConeGeometry(0.48, 0.7, 4),
         (i % 2 === 0) ? redCanvasMat : whiteCanvasMat
       );
       fringe.rotation.x = Math.PI;
-      fringe.position.set(-4.3 + stripeWidth * (i + 0.5), 4.3, -3.15);
+      fringe.position.set(-6.3 + stripeWidth * (i + 0.5), 4.9, -3.95);
       booth.add(fringe);
     }
 
-    // Prateleiras de exposição no fundo com alvos decorativos
+    // Prateleiras de exposição no fundo com alvos decorativos e prêmios de pelúcia
     for (let s = 1; s <= 3; s++) {
-      const shelf = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.14, 0.6), woodMat);
-      shelf.position.set(0, 1.2 + s * 0.9, 2.4);
+      const shelf = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.15, 0.7), woodMat);
+      shelf.position.set(0, 1.2 + s * 1.0, 3.0);
       booth.add(shelf);
 
-      // Patinhos decorativos na prateleira
-      for (let d = -2.5; d <= 2.5; d += 1.6) {
-        const duckDeco = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), goldMat);
-        duckDeco.position.set(d, 1.45 + s * 0.9, 2.4);
+      // Patinhos decorativos e troféus de pelúcia na prateleira
+      for (let d = -4.2; d <= 4.2; d += 1.8) {
+        const duckDeco = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), goldMat);
+        duckDeco.position.set(d, 1.5 + s * 1.0, 3.0);
         booth.add(duckDeco);
       }
     }
 
-    // Lanterna com iluminação quente de parque
-    const light = new THREE.PointLight(0xf59e0b, 2.2, 14);
-    light.position.set(0, 3.8, 0);
+    // Lanterna festiva com iluminação âmbar de parque
+    const light = new THREE.PointLight(0xf59e0b, 2.5, 18);
+    light.position.set(0, 4.5, 0);
     booth.add(light);
 
     booth.position.set(x, 0, z);
+    booth.rotation.y = rotY;
     return booth;
   }
 
-  // Portal Monumental da Arena de Guerra de Neve
-  private createSnowballWarPortal(x: number, z: number): THREE.Group {
+  // Portal Monumental da Arena de Guerra de Neve (Fortaleza Ártica)
+  private createSnowballWarPortal(x: number, z: number, rotY: number = 0): THREE.Group {
     const portal = new THREE.Group();
     const stoneMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
     const iceMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2, metalness: 0.3, transparent: true, opacity: 0.85 });
     const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.95 });
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.8 });
 
-    // Pilares de pedra/gelo do portal
+    // Pilares de pedra/gelo do portal (fortaleza ártica imponente)
     for (const side of [-1, 1]) {
-      const pilar = new THREE.Mesh(new THREE.BoxGeometry(2.0, 7.5, 2.0), stoneMat);
-      pilar.position.set(side * 3.6, 3.75, 0);
+      const pilar = new THREE.Mesh(new THREE.BoxGeometry(2.6, 9.0, 2.6), stoneMat);
+      pilar.position.set(side * 4.6, 4.5, 0);
       pilar.castShadow = true;
 
-      // Cristas de gelo translúcido no topo
-      const iceCap = new THREE.Mesh(new THREE.ConeGeometry(1.4, 2.2, 5), iceMat);
-      iceCap.position.set(side * 3.6, 8.2, 0);
+      // Cristas de gelo translúcido no topo das torres
+      const iceCap = new THREE.Mesh(new THREE.ConeGeometry(1.8, 2.8, 6), iceMat);
+      iceCap.position.set(side * 4.6, 10.4, 0);
 
-      // Tocha de fogo azul polar
-      const torchHolder = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.8, 6), woodMat);
-      torchHolder.position.set(side * 2.5, 3.8, 1.1);
+      // Tochas de fogo azul polar
+      const torchHolder = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 1.0, 6), woodMat);
+      torchHolder.position.set(side * 3.2, 4.5, 1.4);
       torchHolder.rotation.x = 0.4;
-      const torchFlame = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      torchFlame.position.set(side * 2.5, 4.3, 1.3);
+      const torchFlame = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      torchFlame.position.set(side * 3.2, 5.1, 1.7);
 
-      const torchLight = new THREE.PointLight(0x38bdf8, 1.8, 10);
+      const torchLight = new THREE.PointLight(0x38bdf8, 2.2, 14);
       torchLight.position.copy(torchFlame.position);
 
       portal.add(pilar, iceCap, torchHolder, torchFlame, torchLight);
     }
 
     // Arco de gelo superior
-    const arch = new THREE.Mesh(new THREE.BoxGeometry(9.2, 1.4, 2.2), stoneMat);
-    arch.position.set(0, 7.0, 0);
+    const arch = new THREE.Mesh(new THREE.BoxGeometry(11.8, 1.6, 2.8), stoneMat);
+    arch.position.set(0, 8.4, 0);
 
-    const archIce = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.8, 2.4), iceMat);
-    archIce.position.set(0, 7.8, 0);
+    const archIce = new THREE.Mesh(new THREE.BoxGeometry(11.0, 1.0, 3.0), iceMat);
+    archIce.position.set(0, 9.4, 0);
 
-    const snowCap = new THREE.Mesh(new THREE.BoxGeometry(9.5, 0.6, 2.5), snowMat);
-    snowCap.position.set(0, 8.4, 0);
+    const snowCap = new THREE.Mesh(new THREE.BoxGeometry(12.2, 0.8, 3.2), snowMat);
+    snowCap.position.set(0, 10.1, 0);
 
-    // Estandartes da arena
-    const bannerL = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 3.2), new THREE.MeshStandardMaterial({ color: 0x0284c7, side: THREE.DoubleSide }));
-    bannerL.position.set(-3.6, 4.0, 1.05);
-    const bannerR = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 3.2), new THREE.MeshStandardMaterial({ color: 0x0284c7, side: THREE.DoubleSide }));
-    bannerR.position.set(3.6, 4.0, 1.05);
+    // Estandartes da arena de batalha
+    for (const side of [-1, 1]) {
+      const banner = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 4.0), new THREE.MeshStandardMaterial({ color: 0x0284c7, side: THREE.DoubleSide }));
+      banner.position.set(side * 4.6, 4.5, 1.35);
+      portal.add(banner);
+    }
 
-    portal.add(arch, archIce, snowCap, bannerL, bannerR);
+    portal.add(arch, archIce, snowCap);
     portal.position.set(x, 0, z);
+    portal.rotation.y = rotY;
     return portal;
   }
 
@@ -3001,8 +3243,9 @@ class SnowSlideTPSMasterEngine {
         } else if (col.type === 'box') {
           const dx = resX - col.x;
           const dz = resZ - col.z;
-          const cosA = Math.cos(-col.angle);
-          const sinA = Math.sin(-col.angle);
+          const cosA = Math.cos(col.angle);
+          const sinA = Math.sin(col.angle);
+          // Transformada inversa correta (mundo para local do colisor)
           const localX = dx * cosA - dz * sinA;
           const localZ = dx * sinA + dz * cosA;
 
@@ -3034,8 +3277,9 @@ class SnowSlideTPSMasterEngine {
               else pushLocalZ = (distBottom + playerRadius);
             }
 
-            const worldPushX = pushLocalX * Math.cos(col.angle) - pushLocalZ * Math.sin(col.angle);
-            const worldPushZ = pushLocalX * Math.sin(col.angle) + pushLocalZ * Math.cos(col.angle);
+            // Transformada direta correta (local para mundo)
+            const worldPushX = pushLocalX * cosA + pushLocalZ * sinA;
+            const worldPushZ = -pushLocalX * sinA + pushLocalZ * cosA;
             resX += worldPushX;
             resZ += worldPushZ;
           }
@@ -3043,7 +3287,7 @@ class SnowSlideTPSMasterEngine {
       }
     }
 
-    const maxBound = 44;
+    const maxBound = 74;
     resX = Math.max(-maxBound, Math.min(maxBound, resX));
     resZ = Math.max(-maxBound, Math.min(maxBound, resZ));
 
@@ -3110,8 +3354,8 @@ class SnowSlideTPSMasterEngine {
     this.currentBench = null;
     this.benches = [];
 
-    // Solo da Praça da Vila Alpina
-    const groundGeo = new THREE.PlaneGeometry(350, 350, 32, 32);
+    // Solo da Praça da Vila Alpina Expandida (500m x 500m)
+    const groundGeo = new THREE.PlaneGeometry(500, 500, 32, 32);
     const groundMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.9 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
@@ -3120,16 +3364,18 @@ class SnowSlideTPSMasterEngine {
 
     this.hubColliders = [];
 
-    // 1. Estação do Bondinho (Teleférico com embarque para a Corrida)
+    // 1. Estação do Bondinho (Teleférico com embarque para a Corrida de Descida)
     this.scene.add(this.createCableCarBaseStation());
-    this.hubColliders.push({ type: 'box', x: 22, z: -20.5, hw: 8.5, hd: 4.2, angle: 0 });
-    this.hubColliders.push({ type: 'box', x: 13.8, z: -15.5, hw: 0.8, hd: 2.8, angle: 0 });
-    this.hubColliders.push({ type: 'box', x: 30.2, z: -15.5, hw: 0.8, hd: 2.8, angle: 0 });
-    this.hubColliders.push({ type: 'circle', x: 22, z: -19, r: 1.2 });
+    const csX = this.cableCarStationPos.x;
+    const csZ = this.cableCarStationPos.z;
+    this.hubColliders.push({ type: 'box', x: csX, z: csZ - 2.5, hw: 8.5, hd: 4.0, angle: 0 });
+    this.hubColliders.push({ type: 'box', x: csX - 8.2, z: csZ + 2.5, hw: 0.8, hd: 2.8, angle: 0 });
+    this.hubColliders.push({ type: 'box', x: csX + 8.2, z: csZ + 2.5, hw: 0.8, hd: 2.8, angle: 0 });
+    this.hubColliders.push({ type: 'circle', x: csX, z: csZ - 1.0, r: 1.2 });
 
     // Placa 3D Informativa do Bondinho / Corrida de Descida
     this.scene.add(this.createTextSignboard(
-      15, -12, 0.2,
+      28, -30, -Math.PI / 4,
       '🚠 TELEFÉRICO DA MONTANHA',
       '🏔️ EMBARQUE PARA A CORRIDA DE DESCIDA',
       '#38bdf8'
@@ -3137,16 +3383,16 @@ class SnowSlideTPSMasterEngine {
 
     // 2. Fogueira acolhedora central
     this.scene.add(this.createBonfire());
-    this.hubColliders.push({ type: 'circle', x: -2, z: 0, r: 2.1 });
+    this.hubColliders.push({ type: 'circle', x: 0, z: 0, r: 2.4 });
 
     // 3. Boneco de Neve
     this.scene.add(this.createSnowman());
-    this.hubColliders.push({ type: 'circle', x: -12, z: 8, r: 1.4 });
+    this.hubColliders.push({ type: 'circle', x: -8, z: 10, r: 1.5 });
 
     // 4. Cabine Telefônica Mágica (Troca de Personagem) com Placa
     this.scene.add(this.createPhoneBooth(this.phoneBoothPos.x, this.phoneBoothPos.z));
     this.scene.add(this.createTextSignboard(
-      11.5, -3.5, -Math.PI / 4,
+      14, -5, 0,
       '📞 CABINE MÁGICA',
       '✨ METAMORFOSE DE PERSONAGEM',
       '#ef4444'
@@ -3156,16 +3402,17 @@ class SnowSlideTPSMasterEngine {
     const garage = this.createWalkInLodge(
       this.garagePos.x,
       this.garagePos.z,
-      13,
-      11,
+      18,
+      15,
       0x5c3317,
       0xd97706,
       'GARAGEM ALPINA',
-      'garage'
+      'garage',
+      0
     );
     this.scene.add(garage);
     this.scene.add(this.createTextSignboard(
-      -18, -12.5, -0.15,
+      -33, -18, -0.2,
       '🛠️ GARAGEM ALPINA',
       '🛷 TRENÓS & SNOWBOARDS VELOZES',
       '#f59e0b'
@@ -3175,16 +3422,17 @@ class SnowSlideTPSMasterEngine {
     const hatShop = this.createWalkInLodge(
       this.hatShopPos.x,
       this.hatShopPos.z,
-      13,
-      11,
+      18,
+      15,
       0x7c2d12,
       0xdb2777,
       'BOUTIQUE DOS GORROS',
-      'hats'
+      'hats',
+      Math.PI
     );
     this.scene.add(hatShop);
     this.scene.add(this.createTextSignboard(
-      -18, 12.5, 0.15,
+      -33, 24, Math.PI,
       '🎩 BOUTIQUE DOS GORROS',
       '👑 GORROS, CARTOLAS & COROAS',
       '#ec4899'
@@ -3194,16 +3442,17 @@ class SnowSlideTPSMasterEngine {
     const atelier = this.createWalkInLodge(
       this.atelierPos.x,
       this.atelierPos.z,
-      13,
-      11,
+      18,
+      15,
       0x4d7c0f,
       0x059669,
       'ATELIÊ DA MONTANHA',
-      'atelier'
+      'atelier',
+      Math.PI
     );
     this.scene.add(atelier);
     this.scene.add(this.createTextSignboard(
-      6, 17.5, 0,
+      12, 30, Math.PI,
       '🧣 ATELIÊ DA MONTANHA',
       '🥽 CACHECÓIS MACIOS & ÓCULOS',
       '#10b981'
@@ -3213,81 +3462,92 @@ class SnowSlideTPSMasterEngine {
     const tavern = this.createWalkInLodge(
       this.tavernPos.x,
       this.tavernPos.z,
-      14,
-      12,
+      20,
+      16,
       0x78350f,
       0x2563eb,
       'TAVERNA DOS CAMPEÕES',
-      'tavern'
+      'tavern',
+      -Math.PI / 2
     );
     this.scene.add(tavern);
     this.scene.add(this.createTextSignboard(
-      19, 13.5, -Math.PI * 0.15,
+      31, 16, -Math.PI / 2,
       '🏆 TAVERNA DOS CAMPEÕES',
       '🌟 SALÃO DE RECORDES & HALL DA FAMA',
       '#eab308'
     ));
 
-    // 9. Bancos de Madeira Rústicos na Praça (Onde é possível sentar)
-    this.scene.add(this.createWoodenParkBench(-2, 3.4, Math.PI)); // Em frente à fogueira
-    this.scene.add(this.createWoodenParkBench(-2, -3.4, 0)); // Ao sul da fogueira
-    this.scene.add(this.createWoodenParkBench(16, 8, -Math.PI / 2)); // Perto da taverna
-    this.scene.add(this.createWoodenParkBench(6, 2, Math.PI * 0.75)); // Perto da cabine
+    // 9. Bancos de Madeira Rústicos na Praça (Onde é possível sentar ao redor da fogueira)
+    this.scene.add(this.createWoodenParkBench(0, -7, 0)); // Ao norte da fogueira
+    this.scene.add(this.createWoodenParkBench(0, 7, Math.PI)); // Ao sul da fogueira
+    this.scene.add(this.createWoodenParkBench(-7, 0, Math.PI / 2)); // A oeste da fogueira
+    this.scene.add(this.createWoodenParkBench(7, 0, -Math.PI / 2)); // A leste da fogueira
 
     // 10. Spawn dos NPCs Autônomos Circulando pelo Vilarejo
     this.spawnWanderingNPCs();
 
-    // 11. Postes de iluminação da praça
+    // 11. Postes de iluminação da praça e caminhos
     const lampPositions = [
-      [-6, 6],
-      [12, 4],
-      [-8, -8],
-      [10, -12]
+      [-9, -9],
+      [9, -9],
+      [-9, 9],
+      [9, 9],
+      [22, -22],
+      [24, 2],
+      [6, 20],
+      [-22, 16],
+      [-20, -14]
     ];
     for (const [lx, lz] of lampPositions) {
       this.scene.add(this.createStreetLamp(lx, lz));
       this.hubColliders.push({ type: 'circle', x: lx, z: lz, r: 0.5 });
     }
 
-    // 12. Pinheiros decorativos internos
+    // 12. Pinheiros decorativos externos e entre as alas da vila
     const innerTrees = [
-      [-16, -2],
-      [-10, 18],
-      [18, 22],
-      [28, 2],
-      [2, -16]
+      [-48, -10],
+      [-48, 24],
+      [-16, 48],
+      [-6, 52],
+      [34, 42],
+      [56, 2],
+      [54, -28],
+      [-20, -55],
+      [0, -58],
+      [20, -56]
     ];
     for (const [tx, tz] of innerTrees) {
       const tree = this.createSnowyPineTree();
       tree.position.set(tx, 0, tz);
-      tree.scale.setScalar(0.95);
+      tree.scale.setScalar(1.2);
       this.scene.add(tree);
-      this.hubColliders.push({ type: 'circle', x: tx, z: tz, r: 0.9 });
+      this.hubColliders.push({ type: 'circle', x: tx, z: tz, r: 1.1 });
     }
 
-    // 13. Cercas delimitadoras da vila alpina
+    // 13. Cercas delimitadoras da vila alpina expandida
     const fences = [
-      { x: 0, z: -43, rot: 0, len: 38 },
-      { x: 0, z: 43, rot: 0, len: 70 },
-      { x: -43, z: 0, rot: Math.PI / 2, len: 70 },
-      { x: 43, z: 12, rot: Math.PI / 2, len: 45 }
+      { x: 0, z: -75, rot: 0, len: 150 },
+      { x: 0, z: 75, rot: 0, len: 150 },
+      { x: -75, z: 0, rot: Math.PI / 2, len: 150 },
+      { x: 75, z: 0, rot: Math.PI / 2, len: 150 }
     ];
     for (const f of fences) {
       this.scene.add(this.createRusticFence(f.x, f.z, f.rot, f.len));
     }
 
     // 14. Montanhas no horizonte
-    for (let i = 0; i < 6; i++) {
-      const ang = (i / 6) * Math.PI * 2;
-      const p = this.createMountainPeak(55 + Math.random() * 20, 80 + Math.random() * 40);
-      p.position.set(Math.cos(ang) * 160, 0, Math.sin(ang) * 160);
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2;
+      const p = this.createMountainPeak(70 + Math.random() * 25, 110 + Math.random() * 50);
+      p.position.set(Math.cos(ang) * 220, 0, Math.sin(ang) * 220);
       this.scene.add(p);
     }
 
-    // 15. Estande de Tiro ao Alvo do Festival (Circo Alpino)
-    this.scene.add(this.createCarnivalBooth(this.carnivalBoothPos.x, this.carnivalBoothPos.z));
+    // 15. Estande de Tiro ao Alvo do Festival (Circo Alpino Monumental)
+    this.scene.add(this.createCarnivalBooth(this.carnivalBoothPos.x, this.carnivalBoothPos.z, Math.PI / 2));
     this.scene.add(this.createTextSignboard(
-      18, 11.2, Math.PI,
+      31, -12, -Math.PI / 2,
       '🎯 TIRO AO ALVO FESTIVO',
       '🎪 PATINHOS, PRÊMIOS & DIVERSÃO',
       '#f43f5e'
@@ -3296,15 +3556,15 @@ class SnowSlideTPSMasterEngine {
       type: 'box',
       x: this.carnivalBoothPos.x,
       z: this.carnivalBoothPos.z,
-      hw: 4.4,
-      hd: 3.2,
-      angle: 0
+      hw: 6.0,
+      hd: 3.8,
+      angle: Math.PI / 2
     });
 
-    // 16. Portal Monumental da Arena de Guerra de Neve
-    this.scene.add(this.createSnowballWarPortal(this.snowballWarPortalPos.x, this.snowballWarPortalPos.z));
+    // 16. Portal Monumental da Arena de Guerra de Neve (Fortaleza Ártica)
+    this.scene.add(this.createSnowballWarPortal(this.snowballWarPortalPos.x, this.snowballWarPortalPos.z, Math.PI / 2));
     this.scene.add(this.createTextSignboard(
-      -27.5, 14, -Math.PI / 4,
+      -42, 8, -Math.PI / 2,
       '❄️ ARENA GUERRA DE NEVE',
       '⚔️ FORTES, TRINCHEIRAS & LABIRINTO',
       '#06b6d4'
@@ -3313,9 +3573,9 @@ class SnowSlideTPSMasterEngine {
       type: 'box',
       x: this.snowballWarPortalPos.x,
       z: this.snowballWarPortalPos.z,
-      hw: 4.8,
-      hd: 1.8,
-      angle: 0
+      hw: 6.0,
+      hd: 1.6,
+      angle: Math.PI / 2
     });
 
     // RESET TOTAL DO JOGADOR NO HUB
