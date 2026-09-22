@@ -281,6 +281,23 @@
     #shop-prompt strong { color: #facc15; font-size: 1.05rem; display: block; margin-bottom: 2px; }
     #shop-prompt span { font-size: 0.82rem; color: #cbd5e1; }
 
+    /* Retículo / Crosshair Central Estilo Fortnite/Roblox */
+    #hub-crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1.5px solid rgba(15, 23, 42, 0.75);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 20;
+      display: none;
+      box-shadow: 0 0 6px rgba(56, 189, 248, 0.9);
+    }
+
     /* Cutscene / Transição do Bondinho */
     #cable-car-cutscene {
       position: absolute;
@@ -439,7 +456,10 @@
 <body>
 
   <!-- Badge com o Número da Versão Ativa -->
-  <div id="version-badge">v1.8.0-STABLE</div>
+  <div id="version-badge">v1.9.0-STABLE</div>
+
+  <!-- Retículo / Mira Central (Estilo Fortnite/Roblox) -->
+  <div id="hub-crosshair"></div>
 
   <!-- Tela de Login -->
   <div id="login-screen" class="screen">
@@ -458,12 +478,14 @@
     <span class="stat">💰 <span id="currency-val">1250</span> pts</span>
     <button id="open-inventory-btn" class="mini-btn" style="background:#0284c7;">🎒 Meus Equipamentos [Tab]</button>
     <button id="open-shop-btn" class="mini-btn" style="background:#475569;">🛒 Lojinha (No Chalé)</button>
-    <div style="margin-top: 10px; font-size: 0.72rem; color: #94a3b8; line-height: 1.4;">
+    <div style="margin-top: 10px; font-size: 0.72rem; color: #94a3b8; line-height: 1.45;">
+      🖱️ <strong>Câmera:</strong> Mova o mouse (Estilo Fortnite)<br>
       🚶 <strong>Andar:</strong> W,A,S,D / Analógico<br>
       🏃 <strong>Correr:</strong> Segure Shift<br>
       🎒 <strong>Equipamentos:</strong> Pressione <strong>Tab</strong><br>
       🛒 <strong>Lojinha:</strong> Vá ao balcão e aperte <strong>E</strong><br>
-      🚠 <strong>Bondinho:</strong> Vá à estação e aperte <strong>E</strong>
+      🚠 <strong>Bondinho:</strong> Vá à estação e aperte <strong>E</strong><br>
+      🔓 <strong>Liberar Cursor:</strong> Pressione <strong>ESC</strong>
     </div>
   </div>
 

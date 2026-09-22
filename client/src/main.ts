@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import { GameState } from '@snow-slide/shared';
 
-const GAME_VERSION = "v1.8.0-STABLE";
+const GAME_VERSION = "v1.9.0-STABLE";
 
 interface ShopItem {
   id: string;
@@ -128,14 +128,14 @@ class SnowSlideTPSMasterEngine {
   private snowSprayPoints!: THREE.Points;
   private sprayData: { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; maxLife: number }[] = [];
 
-  // Câmera Órbita 360° (Hub)
-  private isDragging = false;
-  private activeOrbitPointerId: number | null = null;
+  // Câmera estilo Terceira Pessoa Guiada pelo Mouse (Fortnite / Roblox)
+  private isPointerLocked = false;
+  private isRightMouseDown = false;
+  private cameraAngleY = 0;
+  private cameraAngleX = 0.22;
+  private cameraDistance = 6.8;
   private previousTouchX = 0;
   private previousTouchY = 0;
-  private cameraAngleY = 0;
-  private cameraAngleX = 0.35;
-  private cameraDistance = 10;
 
   // Analógico Virtual
   private joystickActive = false;
@@ -1847,6 +1847,9 @@ class SnowSlideTPSMasterEngine {
     if (invModal.style.display === 'flex') {
       invModal.style.display = 'none';
     } else {
+      if (document.pointerLockElement) {
+        try { document.exitPointerLock(); } catch (e) {}
+      }
       shopModal.style.display = 'none';
       this.renderInventory('sleds');
       invModal.style.display = 'flex';
@@ -1858,6 +1861,9 @@ class SnowSlideTPSMasterEngine {
   }
 
   private openShopModal() {
+    if (document.pointerLockElement) {
+      try { document.exitPointerLock(); } catch (e) {}
+    }
     const shopModal = document.getElementById('shop-modal')!;
     const invModal = document.getElementById('inventory-modal')!;
     invModal.style.display = 'none';
@@ -2005,40 +2011,90 @@ class SnowSlideTPSMasterEngine {
     joystickBase.addEventListener('pointerup', endJoystick);
     joystickBase.addEventListener('pointercancel', endJoystick);
 
-    // Câmera Órbita 360° (Hub)
-    window.addEventListener('pointerdown', (e) => {
-      if (this.currentScene !== 'HUB') return;
-      const target = e.target as HTMLElement;
-      if (target && (target.closest('#hub-ui') || target.closest('#joystick-ui') || target.closest('#jump-btn') || target.closest('#run-btn') || target.closest('#cable-car-prompt') || target.closest('#shop-prompt') || target.closest('.modal-card') || target.closest('button') || target.closest('input'))) return;
-      
-      this.activeOrbitPointerId = e.pointerId;
-      this.isDragging = true;
-      this.previousTouchX = e.clientX;
-      this.previousTouchY = e.clientY;
-    });
+    // =========================================================================
+    // CONTROLE DE CÂMERA DE TERCEIRA PESSOA GUIADA PELO MOUSE (FORTNITE / ROBLOX)
+    // =========================================================================
 
-    window.addEventListener('pointermove', (e) => {
-      if (this.currentScene !== 'HUB') return;
-      if (!this.isDragging || e.pointerId !== this.activeOrbitPointerId) return;
-      const deltaX = e.clientX - this.previousTouchX;
-      const deltaY = e.clientY - this.previousTouchY;
-      
-      this.cameraAngleY -= deltaX * 0.005;
-      this.cameraAngleX = Math.max(0.1, Math.min(1.4, this.cameraAngleX + deltaY * 0.005));
-      
-      this.previousTouchX = e.clientX;
-      this.previousTouchY = e.clientY;
-    });
-
-    const endOrbit = (e: any) => {
-      if (e.pointerId === this.activeOrbitPointerId) {
-        this.activeOrbitPointerId = null;
-        this.isDragging = false;
+    // Clique na tela/canvas trava o mouse para controle livre (estilo Fortnite)
+    this.renderer.domElement.addEventListener('click', () => {
+      if (this.currentScene === 'HUB' && !this.isAnyModalOpen() && !this.isPointerLocked) {
+        try {
+          this.renderer.domElement.requestPointerLock();
+        } catch (err) {}
       }
-    };
+    });
 
-    window.addEventListener('pointerup', endOrbit);
-    window.addEventListener('pointercancel', endOrbit);
+    document.addEventListener('pointerlockchange', () => {
+      this.isPointerLocked = document.pointerLockElement === this.renderer.domElement;
+      const crosshair = document.getElementById('hub-crosshair');
+      if (crosshair) {
+        crosshair.style.display = (this.isPointerLocked && this.currentScene === 'HUB') ? 'block' : 'none';
+      }
+    });
+
+    // Movimentação do mouse para orientar a câmera (Yaw e Pitch)
+    window.addEventListener('mousemove', (e) => {
+      if (this.currentScene !== 'HUB') return;
+      if (this.isAnyModalOpen()) return;
+
+      if (this.isPointerLocked || this.isRightMouseDown) {
+        const mouseSens = 0.0024;
+        this.cameraAngleY -= e.movementX * mouseSens;
+        this.cameraAngleX = Math.max(-0.35, Math.min(1.15, this.cameraAngleX + e.movementY * mouseSens));
+      }
+    });
+
+    // Suporte a segurar botão direito do mouse (estilo Roblox)
+    window.addEventListener('mousedown', (e) => {
+      if (this.currentScene === 'HUB' && e.button === 2) {
+        this.isRightMouseDown = true;
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 2) {
+        this.isRightMouseDown = false;
+      }
+    });
+
+    window.addEventListener('contextmenu', (e) => {
+      if (this.currentScene === 'HUB') {
+        e.preventDefault();
+      }
+    });
+
+    // Scroll do mouse para zoom da câmera
+    window.addEventListener('wheel', (e) => {
+      if (this.currentScene !== 'HUB') return;
+      this.cameraDistance = Math.max(3.2, Math.min(13.0, this.cameraDistance + e.deltaY * 0.006));
+    }, { passive: true });
+
+    // Suporte a toque (swipe) para dispositivos móveis
+    window.addEventListener('touchstart', (e) => {
+      if (this.currentScene !== 'HUB') return;
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        const target = t.target as HTMLElement;
+        if (target && (target.closest('#hub-ui') || target.closest('#joystick-ui') || target.closest('#jump-btn') || target.closest('#run-btn') || target.closest('#cable-car-prompt') || target.closest('#shop-prompt') || target.closest('.modal-card') || target.closest('button') || target.closest('input'))) return;
+        this.previousTouchX = t.clientX;
+        this.previousTouchY = t.clientY;
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (this.currentScene !== 'HUB') return;
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        const target = t.target as HTMLElement;
+        if (target && (target.closest('#hub-ui') || target.closest('#joystick-ui') || target.closest('#jump-btn') || target.closest('#run-btn') || target.closest('#cable-car-prompt') || target.closest('#shop-prompt') || target.closest('.modal-card') || target.closest('button') || target.closest('input'))) return;
+        const deltaX = t.clientX - this.previousTouchX;
+        const deltaY = t.clientY - this.previousTouchY;
+        this.cameraAngleY -= deltaX * 0.006;
+        this.cameraAngleX = Math.max(-0.35, Math.min(1.15, this.cameraAngleX + deltaY * 0.006));
+        this.previousTouchX = t.clientX;
+        this.previousTouchY = t.clientY;
+      }
+    }, { passive: true });
 
     // Pulo com física fluida
     const triggerJump = () => {
@@ -2141,7 +2197,12 @@ class SnowSlideTPSMasterEngine {
         this.playerPosX = resolved.x;
         this.playerPosZ = resolved.z;
 
-        this.playerGroup.rotation.y = Math.atan2(moveDir.x, moveDir.z);
+        // Rotação suave do personagem na direção do movimento (estilo Fortnite/Roblox)
+        const targetAngle = Math.atan2(moveDir.x, moveDir.z);
+        let angleDiff = targetAngle - this.playerGroup.rotation.y;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        this.playerGroup.rotation.y += angleDiff * 0.22;
 
         // Animação de caminhada/corrida dos membros do pinguim
         this.walkTime += running ? 0.28 : 0.16;
@@ -2231,13 +2292,22 @@ class SnowSlideTPSMasterEngine {
         this.bonfireEmbers.geometry.getAttribute('position').needsUpdate = true;
       }
 
-      // Câmera Órbita 360° do Hub
-      const camX = this.playerPosX + Math.sin(this.cameraAngleY) * (this.cameraDistance * Math.cos(this.cameraAngleX));
-      const camZ = this.playerPosZ + Math.cos(this.cameraAngleY) * (this.cameraDistance * Math.cos(this.cameraAngleX));
-      const camY = this.playerPosY + Math.sin(this.cameraAngleX) * this.cameraDistance + 2;
-      
+      // Câmera estilo terceira pessoa Fortnite/Roblox (guiada pelo mouse)
+      const targetLookY = this.playerPosY + 1.25;
+      const cosPitch = Math.cos(this.cameraAngleX);
+      const sinPitch = Math.sin(this.cameraAngleX);
+
+      // Suave deslocamento sobre o ombro direito para perspectiva 3D cinematográfica
+      const shoulderOffset = 0.45;
+      const rightX = Math.cos(this.cameraAngleY) * shoulderOffset;
+      const rightZ = -Math.sin(this.cameraAngleY) * shoulderOffset;
+
+      const camX = this.playerPosX + rightX + Math.sin(this.cameraAngleY) * (this.cameraDistance * cosPitch);
+      const camZ = this.playerPosZ + rightZ + Math.cos(this.cameraAngleY) * (this.cameraDistance * cosPitch);
+      const camY = Math.max(this.playerPosY + 0.5, this.playerPosY + 1.4 + (this.cameraDistance * sinPitch));
+
       this.camera.position.set(camX, camY, camZ);
-      this.camera.lookAt(this.playerPosX, this.playerPosY + 0.5, this.playerPosZ);
+      this.camera.lookAt(this.playerPosX + rightX * 0.5, targetLookY, this.playerPosZ + rightZ * 0.5);
 
     } else if (this.currentScene === 'RACING') {
       // =========================================================================
