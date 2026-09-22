@@ -159,8 +159,13 @@ class SnowSlideTPSMasterEngine {
     cameraAngleY = 0;
     cameraAngleX = 0.22;
     cameraDistance = 6.8;
-    previousTouchX = 0;
-    previousTouchY = 0;
+    // Câmera Touch Mobile
+    activeCameraTouchId = null;
+    lastCameraTouchX = 0;
+    lastCameraTouchY = 0;
+    // Sistema de Desmanche de Bola de Neve (Partículas de Impacto & Flocos)
+    snowballBurstPoints;
+    burstParticles = [];
     // Analógico Virtual
     joystickActive = false;
     activeJoystickPointerId = null;
@@ -313,8 +318,48 @@ class SnowSlideTPSMasterEngine {
     playSnowSplatSound() {
         if (!this.soundEnabled)
             return;
-        this.playTone(180, 'triangle', 0.12, 0.25);
-        setTimeout(() => this.playTone(90, 'sine', 0.14, 0.2), 30);
+        try {
+            this.initAudio();
+            if (!this.audioCtx)
+                return;
+            const ctx = this.audioCtx;
+            const now = ctx.currentTime;
+            // 1. Ruído de impacto e esfarelamento de neve (Crunch / Splat / Powder burst)
+            const bufferSize = Math.floor(ctx.sampleRate * 0.22);
+            const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.22));
+            }
+            const noiseSrc = ctx.createBufferSource();
+            noiseSrc.buffer = noiseBuffer;
+            // Filtro passa-faixa dinâmico para o "crunch" característico de neve estilhaçando
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(1450, now);
+            filter.frequency.exponentialRampToValueAtTime(320, now + 0.18);
+            filter.Q.setValueAtTime(1.4, now);
+            const noiseGain = ctx.createGain();
+            noiseGain.gain.setValueAtTime(0.38, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+            noiseSrc.connect(filter);
+            filter.connect(noiseGain);
+            noiseGain.connect(ctx.destination);
+            noiseSrc.start(now);
+            // 2. Thump subsônico de impacto físico da massa de neve compactada
+            const osc = ctx.createOscillator();
+            const oscGain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(140, now);
+            osc.frequency.exponentialRampToValueAtTime(35, now + 0.12);
+            oscGain.gain.setValueAtTime(0.28, now);
+            oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            osc.connect(oscGain);
+            oscGain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.13);
+        }
+        catch (e) { }
     }
     playToyGunPopSound() {
         if (!this.soundEnabled)
@@ -435,6 +480,120 @@ class SnowSlideTPSMasterEngine {
             positions[i * 3 + 2] = p.z;
         }
         this.snowSprayPoints.geometry.getAttribute('position').needsUpdate = true;
+    }
+    // =========================================================================
+    // SISTEMA DE DESMANCHE DE BOLA DE NEVE & PAREDES ARREDONDADAS
+    // =========================================================================
+    createSnowballBurstSystem() {
+        const count = 300;
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        for (let i = 0; i < count * 3; i++)
+            positions[i] = 0;
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const mat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.44,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.NormalBlending
+        });
+        this.snowballBurstPoints = new THREE.Points(geo, mat);
+        this.burstParticles = [];
+        for (let i = 0; i < count; i++) {
+            this.burstParticles.push({
+                x: 0, y: -999, z: 0,
+                vx: 0, vy: 0, vz: 0,
+                life: 0, maxLife: 26,
+                size: 0.44
+            });
+        }
+        this.scene.add(this.snowballBurstPoints);
+    }
+    emitSnowballDisintegration(ox, oy, oz, isCharacterHit = false) {
+        if (!this.snowballBurstPoints)
+            return;
+        const particleCount = isCharacterHit ? 36 : 22;
+        let spawned = 0;
+        for (let i = 0; i < this.burstParticles.length && spawned < particleCount; i++) {
+            const p = this.burstParticles[i];
+            if (p.life <= 0) {
+                // Distribuição esférica de estilhaços tridimensionais
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(Math.random() * 2 - 1);
+                const speed = (isCharacterHit ? 0.08 : 0.05) + Math.random() * 0.16;
+                p.x = ox + (Math.random() - 0.5) * 0.25;
+                p.y = Math.max(0.12, oy + (Math.random() - 0.5) * 0.25);
+                p.z = oz + (Math.random() - 0.5) * 0.25;
+                p.vx = Math.sin(phi) * Math.cos(theta) * speed;
+                p.vy = Math.cos(phi) * speed + (isCharacterHit ? 0.09 : 0.05);
+                p.vz = Math.sin(phi) * Math.sin(theta) * speed;
+                p.life = 1;
+                p.maxLife = 18 + Math.floor(Math.random() * 14);
+                spawned++;
+            }
+        }
+    }
+    updateSnowballBursts() {
+        if (!this.snowballBurstPoints)
+            return;
+        const attr = this.snowballBurstPoints.geometry.getAttribute('position');
+        if (!attr)
+            return;
+        const positions = attr.array;
+        for (let i = 0; i < this.burstParticles.length; i++) {
+            const p = this.burstParticles[i];
+            if (p.life > 0) {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.z += p.vz;
+                p.vy -= 0.0055; // gravidade
+                p.vx *= 0.94; // arrasto do ar
+                p.vz *= 0.94;
+                p.life++;
+                // Ao tocar o chão, espalha em poeira rasa
+                if (p.y <= 0.06) {
+                    p.y = 0.06;
+                    p.vx *= 0.6;
+                    p.vz *= 0.6;
+                }
+                if (p.life >= p.maxLife) {
+                    p.life = 0;
+                    p.y = -999;
+                }
+            }
+            positions[i * 3] = p.x;
+            positions[i * 3 + 1] = p.y;
+            positions[i * 3 + 2] = p.z;
+        }
+        attr.needsUpdate = true;
+    }
+    // Geometria Procedural de Muretas com Bordas Arredondadas (Estilo Bunkers de Neve Esculpidos)
+    createRoundedWallGeometry(w, h, d, radius = 0.32) {
+        const r = Math.min(radius, Math.min(w * 0.35, d * 0.35, h * 0.35));
+        const hw = (w * 0.5) - r;
+        const hd = (d * 0.5) - r;
+        const shape = new THREE.Shape();
+        shape.moveTo(-hw, -hd - r);
+        shape.lineTo(hw, -hd - r);
+        shape.quadraticCurveTo(hw + r, -hd - r, hw + r, -hd);
+        shape.lineTo(hw + r, hd);
+        shape.quadraticCurveTo(hw + r, hd + r, hw, hd + r);
+        shape.lineTo(-hw, hd + r);
+        shape.quadraticCurveTo(-hw - r, hd + r, -hw - r, hd);
+        shape.lineTo(-hw, -hd);
+        shape.quadraticCurveTo(-hw - r, -hd - r, -hw, -hd - r);
+        const geo = new THREE.ExtrudeGeometry(shape, {
+            depth: Math.max(0.15, h - r * 1.4),
+            bevelEnabled: true,
+            bevelSegments: 3,
+            steps: 1,
+            bevelSize: r * 0.5,
+            bevelThickness: r * 0.7
+        });
+        geo.rotateX(-Math.PI / 2);
+        geo.center();
+        return geo;
     }
     // Efeito Especial de Confetes de Vitória
     createConfettiSystem() {
@@ -2006,12 +2165,11 @@ class SnowSlideTPSMasterEngine {
         const sinPitch = Math.sin(this.cameraAngleX);
         const sinYaw = Math.sin(this.cameraAngleY);
         const cosYaw = Math.cos(this.cameraAngleY);
-        // FÍSICA BALÍSTICA DINÂMICA:
-        // Mais carga = arremesso mais RÁPIDO, mais RETO (trajetória plana/laser) e menor queda de gravidade!
-        // Pouca carga (toque rápido) = arco parabólico suave (lob)
-        const speed = 0.44 + c * 0.96; // 0.44 a 1.40
-        const loft = (1.0 - c) * 0.13; // 0.13 no lob rápido; 0.0 na carga máxima (totalmente reto!)
-        const gravity = 0.011 - c * 0.0082; // 0.011 (cai no lob) a 0.0028 (quase laser)
+        // FÍSICA BALÍSTICA DINÂMICA (Calibrada para velocidade ideal e resposta tática agradável):
+        // Mais carga = arremesso mais firme e reto; Pouca carga = arco parabólico suave (lob)
+        const speed = 0.34 + c * 0.44; // 0.34 a 0.78 m/frame (excelente legibilidade e tempo de esquiva)
+        const loft = (1.0 - c) * 0.11;
+        const gravity = 0.009 - c * 0.0055;
         const vx = -sinYaw * cosPitch * speed;
         const vy = -sinPitch * speed + loft;
         const vz = -cosYaw * cosPitch * speed;
@@ -2044,6 +2202,7 @@ class SnowSlideTPSMasterEngine {
             sb.mesh.rotation.x += 0.15;
             sb.mesh.rotation.z += 0.15;
             let splat = false;
+            let isCharHit = false;
             // Colisão com o chão
             if (sb.mesh.position.y <= 0.1) {
                 splat = true;
@@ -2055,6 +2214,7 @@ class SnowSlideTPSMasterEngine {
                     const distNpc = sb.mesh.position.distanceTo(npc.mesh.position);
                     if (distNpc < 1.15) {
                         splat = true;
+                        isCharHit = true;
                         npc.state = 'hit';
                         npc.reactionTimer = 45;
                         npc.yVel = 0.22;
@@ -2067,6 +2227,7 @@ class SnowSlideTPSMasterEngine {
                     const distSnowman = sb.mesh.position.distanceTo(new THREE.Vector3(-12, 1.8, 8));
                     if (distSnowman < 1.6) {
                         splat = true;
+                        isCharHit = true;
                         this.showToast('Você acertou em cheio o Boneco de Neve! ⛄❄️', 'success');
                     }
                 }
@@ -2089,6 +2250,7 @@ class SnowSlideTPSMasterEngine {
                             const distBot = sb.mesh.position.distanceTo(new THREE.Vector3(bot.pos.x, bot.pos.y + 0.8, bot.pos.z));
                             if (distBot < 1.25) {
                                 splat = true;
+                                isCharHit = true;
                                 bot.health--;
                                 bot.hitTimer = 18;
                                 this.warHits++;
@@ -2135,6 +2297,7 @@ class SnowSlideTPSMasterEngine {
                     const playerHeadPos = new THREE.Vector3(this.playerPosX, this.playerPosY + 0.85, this.playerPosZ);
                     if (sb.mesh.position.distanceTo(playerHeadPos) < 1.15 && !this.isPlayerWarInvuln) {
                         splat = true;
+                        isCharHit = true;
                         this.warPlayerHealth--;
                         this.isPlayerWarInvuln = true;
                         this.playerWarInvulnTimer = 90; // 1.5s invulnerável
@@ -2155,7 +2318,7 @@ class SnowSlideTPSMasterEngine {
                 splat = true;
             }
             if (splat) {
-                this.emitSnowSpray(10, 0, sb.mesh.position.x, sb.mesh.position.y, sb.mesh.position.z);
+                this.emitSnowballDisintegration(sb.mesh.position.x, sb.mesh.position.y, sb.mesh.position.z, isCharHit);
                 this.playSnowSplatSound();
                 this.scene.remove(sb.mesh);
                 this.snowballs.splice(i, 1);
@@ -3098,6 +3261,7 @@ class SnowSlideTPSMasterEngine {
         this.scene.add(sun);
         this.createSnowParticles();
         this.createSnowSpraySystem();
+        this.createSnowballBurstSystem();
         this.setupUIAndControls();
         window.addEventListener('resize', () => {
             this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -3118,6 +3282,7 @@ class SnowSlideTPSMasterEngine {
         this.scene.add(sun);
         this.createSnowParticles();
         this.createSnowSpraySystem();
+        this.createSnowballBurstSystem();
         this.clearAllSkidMarks();
         this.confettiPoints = null;
         this.snowballs = [];
@@ -3288,7 +3453,25 @@ class SnowSlideTPSMasterEngine {
         if (cutsceneEl)
             cutsceneEl.style.display = 'none';
         document.getElementById('joystick-ui').style.display = 'block';
-        document.getElementById('run-btn').style.display = 'flex';
+        const runBtn = document.getElementById('run-btn');
+        if (runBtn)
+            runBtn.style.display = 'flex';
+        const jumpBtn = document.getElementById('jump-btn');
+        if (jumpBtn)
+            jumpBtn.style.display = 'flex';
+        const sbBtn = document.getElementById('snowball-btn');
+        if (sbBtn) {
+            sbBtn.style.display = 'flex';
+            sbBtn.innerHTML = '❄️';
+        }
+        const aimBtn = document.getElementById('aim-btn');
+        if (aimBtn)
+            aimBtn.style.display = 'flex';
+        const crosshair = document.getElementById('hub-crosshair');
+        if (crosshair) {
+            const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth <= 860;
+            crosshair.style.display = (this.isPointerLocked || isTouch) ? 'block' : 'none';
+        }
         document.getElementById('race-finish-modal').style.display = 'none';
         const shootModal = document.getElementById('shooting-results-modal');
         if (shootModal)
@@ -3472,7 +3655,24 @@ class SnowSlideTPSMasterEngine {
         document.getElementById('racing-hud').style.display = 'block';
         document.getElementById('back-hub-btn').style.display = 'block';
         document.getElementById('joystick-ui').style.display = 'block';
-        document.getElementById('run-btn').style.display = 'none';
+        const runBtn = document.getElementById('run-btn');
+        if (runBtn)
+            runBtn.style.display = 'none';
+        const jumpBtn = document.getElementById('jump-btn');
+        if (jumpBtn)
+            jumpBtn.style.display = 'flex';
+        const sbBtn = document.getElementById('snowball-btn');
+        if (sbBtn)
+            sbBtn.style.display = 'none';
+        const aimBtn = document.getElementById('aim-btn');
+        if (aimBtn)
+            aimBtn.style.display = 'none';
+        const interactBtn = document.getElementById('interact-btn');
+        if (interactBtn)
+            interactBtn.style.display = 'none';
+        const crosshair = document.getElementById('hub-crosshair');
+        if (crosshair)
+            crosshair.style.display = 'none';
         document.getElementById('race-finish-modal').style.display = 'none';
         this.hideAllInteractivePrompts();
         const slalomHudVal = document.getElementById('slalom-hud-val');
@@ -3602,7 +3802,23 @@ class SnowSlideTPSMasterEngine {
         document.getElementById('shooting-hud').style.display = 'block';
         document.getElementById('back-hub-btn').style.display = 'none';
         document.getElementById('joystick-ui').style.display = 'none';
-        document.getElementById('run-btn').style.display = 'none';
+        const runBtn = document.getElementById('run-btn');
+        if (runBtn)
+            runBtn.style.display = 'none';
+        const jumpBtn = document.getElementById('jump-btn');
+        if (jumpBtn)
+            jumpBtn.style.display = 'none';
+        const aimBtn = document.getElementById('aim-btn');
+        if (aimBtn)
+            aimBtn.style.display = 'none';
+        const interactBtn = document.getElementById('interact-btn');
+        if (interactBtn)
+            interactBtn.style.display = 'none';
+        const sbBtn = document.getElementById('snowball-btn');
+        if (sbBtn) {
+            sbBtn.style.display = 'flex';
+            sbBtn.innerHTML = '🎯';
+        }
         document.getElementById('hub-crosshair').style.display = 'block';
         this.hideAllInteractivePrompts();
         this.updateShootingHUD();
@@ -3921,6 +4137,7 @@ class SnowSlideTPSMasterEngine {
         this.scene.add(moon);
         this.createSnowParticles();
         this.createSnowSpraySystem();
+        this.createSnowballBurstSystem();
         // Constrói o labirinto de trincheiras e fortes de neve
         this.buildSnowballWarArena();
         // Spawna jogador no bunker base 1
@@ -3944,7 +4161,23 @@ class SnowSlideTPSMasterEngine {
         document.getElementById('snowball-war-hud').style.display = 'block';
         document.getElementById('back-hub-btn').style.display = 'none';
         document.getElementById('joystick-ui').style.display = 'block';
-        document.getElementById('run-btn').style.display = 'flex';
+        const runBtn = document.getElementById('run-btn');
+        if (runBtn)
+            runBtn.style.display = 'flex';
+        const jumpBtn = document.getElementById('jump-btn');
+        if (jumpBtn)
+            jumpBtn.style.display = 'flex';
+        const sbBtn = document.getElementById('snowball-btn');
+        if (sbBtn) {
+            sbBtn.style.display = 'flex';
+            sbBtn.innerHTML = '❄️';
+        }
+        const aimBtn = document.getElementById('aim-btn');
+        if (aimBtn)
+            aimBtn.style.display = 'flex';
+        const interactBtn = document.getElementById('interact-btn');
+        if (interactBtn)
+            interactBtn.style.display = 'none';
         document.getElementById('hub-crosshair').style.display = 'block';
         this.hideAllInteractivePrompts();
         this.updateWarHUDHearts();
@@ -4000,7 +4233,7 @@ class SnowSlideTPSMasterEngine {
             this.scene.add(mesh);
             this.warObstacles.push({ x: pw.x, z: pw.z, hw: pw.hw, hd: pw.hd, height: hWall });
         }
-        // 4 Bunkers de Neve nos Cantos (Bases dos Competidores)
+        // 4 Bunkers de Neve nos Cantos (Bases dos Competidores com Bordas Arredondadas)
         const corners = [
             { x: -20, z: -20 },
             { x: 20, z: -20 },
@@ -4008,17 +4241,23 @@ class SnowSlideTPSMasterEngine {
             { x: 20, z: 20 }
         ];
         for (const c of corners) {
-            // Pequeno forte quadrado com entrada
+            // Pequeno forte quadrado esculpido com cantos arredondados
             const bWallH = 2.2;
-            const b1 = new THREE.Mesh(new THREE.BoxGeometry(6, bWallH, 0.8), snowWallMat);
+            const b1Geo = this.createRoundedWallGeometry(6, bWallH, 0.8, 0.28);
+            const b1 = new THREE.Mesh(b1Geo, snowWallMat);
             b1.position.set(c.x, bWallH * 0.5, c.z - 3);
-            const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.8, bWallH, 6), snowWallMat);
+            b1.castShadow = true;
+            b1.receiveShadow = true;
+            const b2Geo = this.createRoundedWallGeometry(0.8, bWallH, 6, 0.28);
+            const b2 = new THREE.Mesh(b2Geo, snowWallMat);
             b2.position.set(c.x - 3, bWallH * 0.5, c.z);
+            b2.castShadow = true;
+            b2.receiveShadow = true;
             this.scene.add(b1, b2);
             this.warObstacles.push({ x: c.x, z: c.z - 3, hw: 3.0, hd: 0.5, height: bWallH });
             this.warObstacles.push({ x: c.x - 3, z: c.z, hw: 0.5, hd: 3.0, height: bWallH });
         }
-        // Labirinto tático central com muretas de cobertura (altura peito: 1.4m) e blocos altos (3.0m)
+        // Labirinto tático central com muretas de cobertura arredondadas (altura peito: 1.4m) e blocos altos (2.8m)
         const mazeWalls = [
             // Muretas centrais em cruz protegendo o miolo
             { x: 0, z: -8, w: 10, d: 1.0, h: 1.4 },
@@ -4043,7 +4282,10 @@ class SnowSlideTPSMasterEngine {
         ];
         for (const mw of mazeWalls) {
             const mat = mw.isIce ? iceBlockMat : snowWallMat;
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(mw.w, mw.h, mw.d), mat);
+            const geo = mw.isIce
+                ? new THREE.BoxGeometry(mw.w, mw.h, mw.d)
+                : this.createRoundedWallGeometry(mw.w, mw.h, mw.d, 0.32);
+            const mesh = new THREE.Mesh(geo, mat);
             mesh.position.set(mw.x, mw.h * 0.5, mw.z);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
@@ -4278,11 +4520,12 @@ class SnowSlideTPSMasterEngine {
         const dist = Math.sqrt(toPlayerX * toPlayerX + toPlayerZ * toPlayerZ);
         if (dist < 0.1)
             return;
-        const speed = 0.68;
+        // Velocidade calibrada e legível para permitir reação tática e esquiva
+        const speed = 0.42;
         const vx = (toPlayerX / dist) * speed;
         const vz = (toPlayerZ / dist) * speed;
-        const vy = 0.12 + (dist / 24) * 0.08;
-        const gravity = 0.007;
+        const vy = 0.11 + (dist / 24) * 0.06;
+        const gravity = 0.006;
         const snowballGeo = new THREE.SphereGeometry(0.20, 8, 8);
         const snowballMat = new THREE.MeshStandardMaterial({ color: 0x93c5fd, roughness: 0.7 });
         const mesh = new THREE.Mesh(snowballGeo, snowballMat);
@@ -4290,7 +4533,7 @@ class SnowSlideTPSMasterEngine {
         mesh.castShadow = true;
         this.scene.add(mesh);
         this.snowballs.push({ mesh, vx, vy, vz, life: 0, isEnemy: true, gravity });
-        this.playSnowThrowSound(0.5);
+        this.playSnowThrowSound(0.4);
     }
     endSnowballWar() {
         if (this.warTimer)
@@ -4846,12 +5089,17 @@ class SnowSlideTPSMasterEngine {
                 }
             }
         });
-        document.addEventListener('pointerlockchange', () => {
-            this.isPointerLocked = document.pointerLockElement === this.renderer.domElement;
+        const updateCrosshairVisibility = () => {
             const crosshair = document.getElementById('hub-crosshair');
             if (crosshair) {
-                crosshair.style.display = (this.isPointerLocked && (this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR' || this.currentScene === 'SHOOTING_GALLERY')) ? 'block' : 'none';
+                const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth <= 860;
+                const validScene = this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR' || this.currentScene === 'SHOOTING_GALLERY';
+                crosshair.style.display = (validScene && (this.isPointerLocked || isTouch)) ? 'block' : 'none';
             }
+        };
+        document.addEventListener('pointerlockchange', () => {
+            this.isPointerLocked = document.pointerLockElement === this.renderer.domElement;
+            updateCrosshairVisibility();
         });
         // Rotação da Câmera com Mouse (Com suporte a ADS e multiplicador de mira)
         window.addEventListener('mousemove', (e) => {
@@ -4869,6 +5117,59 @@ class SnowSlideTPSMasterEngine {
                 this.cameraAngleX = Math.max(-0.65, Math.min(1.15, this.cameraAngleX + e.movementY * effectiveSens * invertFactor));
             }
         });
+        // ROTAÇÃO DE CÂMERA POR TOQUE (TOUCH DRAG MOBILE)
+        window.addEventListener('touchstart', (e) => {
+            if (this.currentScene !== 'HUB' && this.currentScene !== 'SNOWBALL_WAR' && this.currentScene !== 'SHOOTING_GALLERY')
+                return;
+            if (this.isAnyModalOpen())
+                return;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                const target = touch.target;
+                if (target && target.closest('#joystick-ui, #jump-btn, #run-btn, #snowball-btn, #aim-btn, #interact-btn, .modal-card, .interactive-prompt, #settings-toggle-btn')) {
+                    continue;
+                }
+                if (this.activeCameraTouchId === null) {
+                    this.activeCameraTouchId = touch.identifier;
+                    this.lastCameraTouchX = touch.clientX;
+                    this.lastCameraTouchY = touch.clientY;
+                    break;
+                }
+            }
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            if (this.activeCameraTouchId === null)
+                return;
+            if (this.currentScene !== 'HUB' && this.currentScene !== 'SNOWBALL_WAR' && this.currentScene !== 'SHOOTING_GALLERY')
+                return;
+            if (this.isAnyModalOpen())
+                return;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                if (touch.identifier === this.activeCameraTouchId) {
+                    const dx = touch.clientX - this.lastCameraTouchX;
+                    const dy = touch.clientY - this.lastCameraTouchY;
+                    this.lastCameraTouchX = touch.clientX;
+                    this.lastCameraTouchY = touch.clientY;
+                    const touchSens = 0.0038 * this.mouseSensMultiplier;
+                    const effectiveSens = this.isAimingDownSights ? touchSens * 0.55 : touchSens;
+                    const invertFactor = this.invertY ? -1 : 1;
+                    this.cameraAngleY -= dx * effectiveSens;
+                    this.cameraAngleX = Math.max(-0.65, Math.min(1.15, this.cameraAngleX + dy * effectiveSens * invertFactor));
+                    break;
+                }
+            }
+        }, { passive: true });
+        const endCameraTouch = (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === this.activeCameraTouchId) {
+                    this.activeCameraTouchId = null;
+                    break;
+                }
+            }
+        };
+        window.addEventListener('touchend', endCameraTouch, { passive: true });
+        window.addEventListener('touchcancel', endCameraTouch, { passive: true });
         // Arremesso Carregado (LMB) & Mira Tática / ADS (RMB)
         window.addEventListener('mousedown', (e) => {
             if (this.isAnyModalOpen())
@@ -4930,16 +5231,80 @@ class SnowSlideTPSMasterEngine {
             }
         };
         const jumpBtn = document.getElementById('jump-btn');
-        jumpBtn.addEventListener('pointerdown', (e) => {
-            e.stopPropagation();
-            triggerJump();
-        });
+        if (jumpBtn) {
+            jumpBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                triggerJump();
+            });
+        }
         const runBtn = document.getElementById('run-btn');
-        runBtn.addEventListener('pointerdown', (e) => {
-            e.stopPropagation();
-            this.isRunning = !this.isRunning;
-            runBtn.classList.toggle('active', this.isRunning);
-        });
+        if (runBtn) {
+            runBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                this.isRunning = !this.isRunning;
+                runBtn.classList.toggle('active', this.isRunning);
+            });
+        }
+        // Botão Mobile Dedicado: Bola de Neve / Disparo
+        const snowballBtn = document.getElementById('snowball-btn');
+        if (snowballBtn) {
+            const handleSnowballPress = (e) => {
+                e.stopPropagation();
+                if (this.isAnyModalOpen())
+                    return;
+                this.initAudio();
+                if (this.currentScene === 'SHOOTING_GALLERY') {
+                    this.shootCarnivalToyGun();
+                    return;
+                }
+                if (this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR') {
+                    this.isChargingSnowball = true;
+                    this.snowballChargeStartTime = performance.now();
+                    snowballBtn.classList.add('charging');
+                    const chargeContainer = document.getElementById('snowball-charge-container');
+                    if (chargeContainer)
+                        chargeContainer.style.display = 'block';
+                }
+            };
+            const handleSnowballRelease = (e) => {
+                e.stopPropagation();
+                snowballBtn.classList.remove('charging');
+                if (this.isChargingSnowball) {
+                    this.isChargingSnowball = false;
+                    const chargeDuration = performance.now() - this.snowballChargeStartTime;
+                    const chargeRatio = Math.min(1.0, Math.max(0.15, chargeDuration / 850));
+                    this.throwSnowball(chargeRatio);
+                    const chargeContainer = document.getElementById('snowball-charge-container');
+                    if (chargeContainer)
+                        chargeContainer.style.display = 'none';
+                }
+            };
+            snowballBtn.addEventListener('pointerdown', handleSnowballPress);
+            snowballBtn.addEventListener('pointerup', handleSnowballRelease);
+            snowballBtn.addEventListener('pointercancel', handleSnowballRelease);
+        }
+        // Botão Mobile Dedicado: Mira ADS
+        const aimBtn = document.getElementById('aim-btn');
+        if (aimBtn) {
+            aimBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                if (this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR') {
+                    this.isAimingDownSights = !this.isAimingDownSights;
+                    aimBtn.classList.toggle('active', this.isAimingDownSights);
+                    const crosshair = document.getElementById('hub-crosshair');
+                    if (crosshair)
+                        crosshair.classList.toggle('aiming', this.isAimingDownSights);
+                }
+            });
+        }
+        // Botão Mobile Dedicado: Interação Rápida
+        const interactBtn = document.getElementById('interact-btn');
+        if (interactBtn) {
+            interactBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                this.triggerCurrentHubInteraction();
+            });
+        }
         // Teclado
         window.addEventListener('keydown', (e) => {
             this.initAudio();
@@ -4993,36 +5358,7 @@ class SnowSlideTPSMasterEngine {
                 triggerJump();
             // Tecla E para interações contextuais no Hub
             if ((e.key === 'e' || e.key === 'E') && this.currentScene === 'HUB') {
-                if (this.isSitting) {
-                    this.standUpFromBench();
-                }
-                else if (this.nearBench) {
-                    this.sitOnNearestBench();
-                }
-                else if (this.nearGarage) {
-                    this.openSegmentedShop('garage');
-                }
-                else if (this.nearHatShop) {
-                    this.openSegmentedShop('hats');
-                }
-                else if (this.nearAtelier) {
-                    this.openSegmentedShop('atelier');
-                }
-                else if (this.nearRecords) {
-                    this.openRecordsModal();
-                }
-                else if (this.nearPhoneBooth) {
-                    this.openCharacterModal();
-                }
-                else if (this.nearCableCar) {
-                    this.startCableCarClimb();
-                }
-                else if (this.nearCarnivalBooth) {
-                    this.loadShootingGalleryScene();
-                }
-                else if (this.nearSnowballWarPortal) {
-                    this.loadSnowballWarScene();
-                }
+                this.triggerCurrentHubInteraction();
             }
         });
         window.addEventListener('keyup', (e) => {
@@ -5039,6 +5375,40 @@ class SnowSlideTPSMasterEngine {
                 this.isRunning = false;
             }
         });
+    }
+    triggerCurrentHubInteraction() {
+        if (this.currentScene !== 'HUB')
+            return;
+        if (this.isSitting) {
+            this.standUpFromBench();
+        }
+        else if (this.nearBench) {
+            this.sitOnNearestBench();
+        }
+        else if (this.nearGarage) {
+            this.openSegmentedShop('garage');
+        }
+        else if (this.nearHatShop) {
+            this.openSegmentedShop('hats');
+        }
+        else if (this.nearAtelier) {
+            this.openSegmentedShop('atelier');
+        }
+        else if (this.nearRecords) {
+            this.openRecordsModal();
+        }
+        else if (this.nearPhoneBooth) {
+            this.openCharacterModal();
+        }
+        else if (this.nearCableCar) {
+            this.startCableCarClimb();
+        }
+        else if (this.nearCarnivalBooth) {
+            this.loadShootingGalleryScene();
+        }
+        else if (this.nearSnowballWarPortal) {
+            this.loadSnowballWarScene();
+        }
     }
     sitOnNearestBench() {
         if (!this.nearBench)
@@ -5128,11 +5498,12 @@ class SnowSlideTPSMasterEngine {
         if (this.currentScene === 'HUB') {
             // Atualização dos NPCs autônomos circulando pela praça
             this.updateWanderingNPCs();
-            // Atualização das bolas de neve atiradas
+            // Atualização das bolas de neve atiradas e dos estilhaços/desmanche
             this.updateSnowballs();
+            this.updateSnowballBursts();
             if (!this.isSitting) {
                 const running = this.keyShift || this.isRunning;
-                const moveSpeed = running ? 0.28 : 0.16;
+                const moveSpeed = running ? 0.22 : 0.14;
                 const cosYaw = Math.cos(this.cameraAngleY);
                 const sinYaw = Math.sin(this.cameraAngleY);
                 const fwdX = -sinYaw;
@@ -5277,6 +5648,36 @@ class SnowSlideTPSMasterEngine {
                 this.nearSnowballWarPortal = distWar < 5.5;
                 warPrompt.style.display = (this.nearSnowballWarPortal && !this.isSitting) ? 'block' : 'none';
             }
+            // Atualização do Botão de Interação Rápida Mobile
+            const hasInteraction = (this.isSitting || this.nearBench || this.nearGarage || this.nearHatShop || this.nearAtelier || this.nearRecords || this.nearPhoneBooth || this.nearCableCar || this.nearCarnivalBooth || this.nearSnowballWarPortal);
+            const interactBtn = document.getElementById('interact-btn');
+            if (interactBtn) {
+                interactBtn.style.display = hasInteraction ? 'flex' : 'none';
+                if (this.isSitting) {
+                    interactBtn.innerHTML = '🚶 LEVANTAR';
+                }
+                else if (this.nearBench) {
+                    interactBtn.innerHTML = '🪑 SENTAR';
+                }
+                else if (this.nearGarage || this.nearHatShop || this.nearAtelier) {
+                    interactBtn.innerHTML = '🛍️ LOJA';
+                }
+                else if (this.nearPhoneBooth) {
+                    interactBtn.innerHTML = '📞 CABINE';
+                }
+                else if (this.nearCableCar) {
+                    interactBtn.innerHTML = '🚠 CORRIDA';
+                }
+                else if (this.nearCarnivalBooth) {
+                    interactBtn.innerHTML = '🎯 TIRO';
+                }
+                else if (this.nearSnowballWarPortal) {
+                    interactBtn.innerHTML = '❄️ GUERRA';
+                }
+                else if (this.nearRecords) {
+                    interactBtn.innerHTML = '🏆 RECORDES';
+                }
+            }
             // Animação dos NPCs Lojistas
             const now = Date.now();
             if (this.npcRalph)
@@ -5325,8 +5726,9 @@ class SnowSlideTPSMasterEngine {
             // Atualização dos bots e das bolas de neve na arena
             this.updateSnowballWar();
             this.updateSnowballs();
+            this.updateSnowballBursts();
             const running = this.keyShift || this.isRunning;
-            const moveSpeed = running ? 0.28 : 0.16;
+            const moveSpeed = running ? 0.20 : 0.13;
             const cosYaw = Math.cos(this.cameraAngleY);
             const sinYaw = Math.sin(this.cameraAngleY);
             const fwdX = -sinYaw;
