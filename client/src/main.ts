@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import { GameState } from '@snow-slide/shared';
 
-const GAME_VERSION = "v2.1.0-STABLE";
+const GAME_VERSION = "v2.2.0-STABLE";
 
 type CharacterId = 'penguin' | 'frog' | 'cat' | 'dog';
 
@@ -64,6 +64,56 @@ interface ActiveSnowball {
   vy: number;
   vz: number;
   life: number;
+  isEnemy?: boolean;
+}
+
+// Alvos do Estande de Tiro ao Alvo (Circo/Festival)
+interface CarnivalTarget {
+  group: THREE.Group;
+  type: 'duck' | 'bullseye' | 'star' | 'bomb';
+  shelfIndex: number;
+  x: number;
+  baseY: number;
+  z: number;
+  speed: number;
+  dir: number;
+  points: number;
+  hit: boolean;
+  hitTimer: number;
+}
+
+// Bots Adversários da Arena de Guerra de Neve
+interface WarBot {
+  id: string;
+  name: string;
+  type: CharacterId;
+  group: THREE.Group;
+  torso: THREE.Group;
+  head: THREE.Group;
+  armL: THREE.Mesh;
+  armR: THREE.Mesh;
+  footL: THREE.Mesh;
+  footR: THREE.Mesh;
+  tail: THREE.Mesh | null;
+  pos: THREE.Vector3;
+  rotY: number;
+  health: number;
+  maxHealth: number;
+  state: 'patrol' | 'cover' | 'aim' | 'frozen';
+  stateTimer: number;
+  targetPos: THREE.Vector3;
+  invulnTimer: number;
+  iceCube: THREE.Mesh | null;
+  walkTime: number;
+}
+
+// Obstáculos e Muretas do Labirinto de Neve
+interface WarObstacle {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+  height: number;
 }
 
 const SHOP_CATALOG: ShopItem[] = [
@@ -97,7 +147,7 @@ class SnowSlideTPSMasterEngine {
   private camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer;
   
-  private currentScene: 'LOGIN' | 'HUB' | 'RACING' = 'LOGIN';
+  private currentScene: 'LOGIN' | 'HUB' | 'RACING' | 'SHOOTING_GALLERY' | 'SNOWBALL_WAR' = 'LOGIN';
   
   private playerGroup!: THREE.Group;
   private playerPosX = 0;
@@ -114,9 +164,39 @@ class SnowSlideTPSMasterEngine {
   private benches: BenchSpot[] = [];
   private nearBench: BenchSpot | null = null;
 
-  // Sistema de Bolas de Neve
+  // Sistema de Bolas de Neve e Mira ADS
   private snowballs: ActiveSnowball[] = [];
   private lastSnowballTime = 0;
+  private isAimingDownSights = false;
+  private isChargingSnowball = false;
+  private snowballChargeStartTime = 0;
+  private currentChargeRatio = 0.5;
+
+  // Minigame 1: Estande de Tiro ao Alvo do Festival
+  private nearCarnivalBooth = false;
+  private carnivalBoothPos = new THREE.Vector3(18, 0, 16);
+  private carnivalTargets: CarnivalTarget[] = [];
+  private shootingScore = 0;
+  private shootingHits = 0;
+  private shootingShots = 0;
+  private shootingCombo = 0;
+  private shootingTimeLeft = 40;
+  private shootingTimer: any = null;
+  private toyGunGroup: THREE.Group | null = null;
+
+  // Minigame 2: Arena de Guerra de Bolas de Neve
+  private nearSnowballWarPortal = false;
+  private snowballWarPortalPos = new THREE.Vector3(-32, 0, 16);
+  private warBots: WarBot[] = [];
+  private warObstacles: WarObstacle[] = [];
+  private warPlayerHealth = 3;
+  private warKOs = 0;
+  private warHits = 0;
+  private warScore = 0;
+  private warTimeLeft = 60;
+  private warTimer: any = null;
+  private isPlayerWarInvuln = false;
+  private playerWarInvulnTimer = 0;
   
   // Customizações e Equipamentos
   private currency = 1250;
@@ -172,7 +252,7 @@ class SnowSlideTPSMasterEngine {
   private charFootR!: THREE.Mesh;
   private charArmL!: THREE.Mesh;
   private charArmR!: THREE.Mesh;
-  private charTail: THREE.Mesh | null = null;
+  private charTail: THREE.Object3D | null = null;
   private charScarfTail: THREE.Mesh | null = null;
   private walkTime = 0;
   private isRunning = false;
@@ -368,15 +448,35 @@ class SnowSlideTPSMasterEngine {
     setTimeout(() => this.playTone(1318.51, 'sine', 0.18, 0.2), 70);
   }
 
-  private playSnowThrowSound() {
+  private playSnowThrowSound(charge = 0.5) {
     if (!this.soundEnabled) return;
-    this.playTone(480, 'sine', 0.08, 0.15);
+    const baseFreq = 320 + charge * 260;
+    this.playTone(baseFreq, 'sine', 0.08, 0.12 + charge * 0.12);
   }
 
   private playSnowSplatSound() {
     if (!this.soundEnabled) return;
     this.playTone(180, 'triangle', 0.12, 0.25);
     setTimeout(() => this.playTone(90, 'sine', 0.14, 0.2), 30);
+  }
+
+  private playToyGunPopSound() {
+    if (!this.soundEnabled) return;
+    this.playTone(720, 'triangle', 0.04, 0.35);
+    setTimeout(() => this.playTone(220, 'sine', 0.07, 0.4), 20);
+  }
+
+  private playTargetHitSound() {
+    if (!this.soundEnabled) return;
+    this.playTone(520, 'square', 0.04, 0.22);
+    setTimeout(() => this.playTone(880, 'sine', 0.12, 0.25), 35);
+  }
+
+  private playCarnivalHornSound() {
+    if (!this.soundEnabled) return;
+    this.playTone(440, 'sawtooth', 0.15, 0.2);
+    setTimeout(() => this.playTone(554.37, 'sawtooth', 0.18, 0.22), 120);
+    setTimeout(() => this.playTone(659.25, 'sawtooth', 0.3, 0.28), 260);
   }
 
   // =========================================================================
@@ -614,58 +714,100 @@ class SnowSlideTPSMasterEngine {
   // MODELOS 3D PROCEDURAIS DOS 4 PERSONAGENS (METAMORFOSE)
   // =========================================================================
 
-  // 1. PINGUIM ALPINO
+  // 1. PINGUIM ALPINO ULTRA-DETALHADO
   private createDetailedPenguin(): THREE.Group {
     const root = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
-    const orangeMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0b1329, roughness: 0.35 });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.45 });
+    const beakUpperMat = new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.3 });
+    const beakLowerMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.35 });
+    const footMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.5 });
+    const clawMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4 });
+    const eyeIrisMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.2 });
 
     this.charTorso = new THREE.Group();
     
-    // Corpo
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.44, 0.65, 14, 14), bodyMat);
+    // Corpo rechonchudo aerodinâmico
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.68, 16, 16), bodyMat);
     body.position.y = 0.68;
     body.castShadow = true;
     this.charTorso.add(body);
 
-    // Barriga branca
-    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14), whiteMat);
-    belly.position.set(0, 0.64, 0.24);
-    belly.scale.set(0.82, 1.05, 0.5);
+    // Barriga macia em camadas
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.40, 16, 16), whiteMat);
+    belly.position.set(0, 0.64, 0.23);
+    belly.scale.set(0.85, 1.10, 0.55);
     this.charTorso.add(belly);
 
-    // Cabeça
-    this.charHead = new THREE.Group();
-    this.charHead.position.y = 1.22;
+    // Penugem de peito estilizada
+    const chestTuft = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.25, 4), whiteMat);
+    chestTuft.rotation.set(-0.35, 0, Math.PI);
+    chestTuft.position.set(0, 0.88, 0.38);
+    this.charTorso.add(chestTuft);
 
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16), bodyMat);
+    // Cabeça fofa do pinguim
+    this.charHead = new THREE.Group();
+    this.charHead.position.y = 1.24;
+
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.37, 18, 18), bodyMat);
     headMesh.castShadow = true;
     this.charHead.add(headMesh);
 
-    // Bico laranja
-    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.32, 8), orangeMat);
-    beak.rotation.x = Math.PI / 2;
-    beak.position.set(0, -0.04, 0.44);
-    this.charHead.add(beak);
+    // Crista de penas no topo da cabeça
+    for (let i = -1; i <= 1; i++) {
+      const crestFeather = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.24, 4), bodyMat);
+      crestFeather.position.set(i * 0.08, 0.38, -0.05);
+      crestFeather.rotation.set(-0.4, 0, i * 0.25);
+      this.charHead.add(crestFeather);
+    }
 
-    // Olhos
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-    const pupilMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+    // Bico realista em duas mandíbulas articuladas
+    const beakUpper = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.32, 8), beakUpperMat);
+    beakUpper.rotation.x = Math.PI / 2 + 0.05;
+    beakUpper.position.set(0, -0.02, 0.44);
+    beakUpper.scale.set(1.0, 1.1, 0.85);
+
+    const beakLower = new THREE.Mesh(new THREE.ConeGeometry(0.10, 0.26, 8), beakLowerMat);
+    beakLower.rotation.x = Math.PI / 2 - 0.05;
+    beakLower.position.set(0, -0.07, 0.41);
+    beakLower.scale.set(0.9, 0.9, 0.75);
+
+    // Narinas sutis
+    for (const side of [-1, 1]) {
+      const nostril = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), new THREE.MeshBasicMaterial({ color: 0x9a3412 }));
+      nostril.position.set(side * 0.04, 0.03, 0.43);
+      this.charHead.add(nostril);
+    }
+
+    this.charHead.add(beakUpper, beakLower);
+
+    // Olhos expressivos com íris azul, pupilas brilhantes e reflexos duplos
+    const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
     const glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), eyeMat);
-      eye.position.set(side * 0.13, 0.06, 0.30);
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), pupilMat);
-      pupil.position.set(side * 0.13, 0.06, 0.36);
-      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), glintMat);
-      glint.position.set(side * 0.11 + 0.02, 0.08, 0.39);
-      this.charHead.add(eye, pupil, glint);
+      const eyeGlobe = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), eyeWhiteMat);
+      eyeGlobe.position.set(side * 0.14, 0.08, 0.30);
 
-      const blush = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.08), new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.65 }));
-      blush.position.set(side * 0.24, -0.04, 0.28);
-      blush.rotation.y = side * 0.3;
+      const iris = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.02, 10), eyeIrisMat);
+      iris.rotation.x = Math.PI / 2;
+      iris.position.set(side * 0.14, 0.08, 0.36);
+
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 8), pupilMat);
+      pupil.position.set(side * 0.14, 0.08, 0.375);
+
+      const glint1 = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 6), glintMat);
+      glint1.position.set(side * 0.125 + 0.015, 0.10, 0.40);
+      const glint2 = new THREE.Mesh(new THREE.SphereGeometry(0.008, 5, 5), glintMat);
+      glint2.position.set(side * 0.15, 0.065, 0.40);
+
+      this.charHead.add(eyeGlobe, iris, pupil, glint1, glint2);
+
+      // Bochechas rosadas fofas
+      const blush = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.07), new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.6 }));
+      blush.position.set(side * 0.25, -0.03, 0.29);
+      blush.rotation.y = side * 0.35;
       this.charHead.add(blush);
     }
 
@@ -674,85 +816,148 @@ class SnowSlideTPSMasterEngine {
     this.charTorso.add(this.charHead);
     this.attachEquippedScarf(this.charTorso);
 
-    // Asas
-    this.charArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 8), bodyMat);
-    this.charArmL.position.set(-0.50, 0.66, 0.02);
-    this.charArmL.rotation.set(-0.2, 0, 0.42);
-    this.charArmL.scale.set(1.1, 1.0, 0.4);
+    // Asas / Nadadeiras esculpidas com borda interior branca
+    const createFlipper = (side: number) => {
+      const wingGroup = new THREE.Group();
+      const flipper = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.50, 10, 10), bodyMat);
+      flipper.scale.set(1.15, 1.0, 0.35);
+      flipper.castShadow = true;
 
-    this.charArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 8), bodyMat);
-    this.charArmR.position.set(0.50, 0.66, 0.02);
-    this.charArmR.rotation.set(-0.2, 0, -0.42);
-    this.charArmR.scale.set(1.1, 1.0, 0.4);
+      const innerTrim = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.42, 8, 8), whiteMat);
+      innerTrim.position.set(-side * 0.02, -0.04, 0.04);
+      innerTrim.scale.set(1.0, 0.95, 0.25);
 
+      wingGroup.add(flipper, innerTrim);
+      wingGroup.position.set(side * 0.51, 0.67, 0.02);
+      wingGroup.rotation.set(-0.2, 0, side * -0.42);
+      return wingGroup as any;
+    };
+
+    this.charArmL = createFlipper(-1);
+    this.charArmR = createFlipper(1);
     this.charTorso.add(this.charArmL, this.charArmR);
+
+    // Rabinho triangular de penas
+    this.charTail = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.28, 4), bodyMat);
+    this.charTail.rotation.set(-1.1, 0, 0);
+    this.charTail.position.set(0, 0.45, -0.44);
+    this.charTorso.add(this.charTail);
+
     root.add(this.charTorso);
 
-    // Patas
-    this.charFootL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.38), orangeMat);
-    this.charFootL.position.set(-0.24, 0.06, 0.12);
-    this.charFootL.castShadow = true;
+    // Patas palmadas com 3 dedinhos distintos e unhas
+    const createPenguinFoot = (posX: number) => {
+      const foot = new THREE.Group();
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 0.36), footMat);
+      sole.position.set(0, 0.04, 0.10);
+      sole.castShadow = true;
+      foot.add(sole);
 
-    this.charFootR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.38), orangeMat);
-    this.charFootR.position.set(0.24, 0.06, 0.12);
-    this.charFootR.castShadow = true;
+      for (let toe = -1; toe <= 1; toe++) {
+        const toeMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.16, 6), footMat);
+        toeMesh.rotation.x = Math.PI / 2;
+        toeMesh.position.set(toe * 0.08, 0.04, 0.28);
 
+        const claw = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 4), clawMat);
+        claw.rotation.x = Math.PI / 2;
+        claw.position.set(toe * 0.08, 0.035, 0.37);
+
+        foot.add(toeMesh, claw);
+      }
+      foot.position.set(posX, 0.02, 0.02);
+      return foot as any;
+    };
+
+    this.charFootL = createPenguinFoot(-0.24);
+    this.charFootR = createPenguinFoot(0.24);
     root.add(this.charFootL, this.charFootR);
-    this.charTail = null;
+
     return root;
   }
 
-  // 2. SAPO VERDE
+  // 2. SAPO VERDE ULTRA-DETALHADO
   private createDetailedFrog(): THREE.Group {
     const root = new THREE.Group();
-    const frogGreenMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.35 });
+    const frogGreenMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.32 });
     const frogBellyMat = new THREE.MeshStandardMaterial({ color: 0xd9f99d, roughness: 0.5 });
-    const eyeGoldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.2 });
+    const frogSpotMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.4 });
+    const eyeGoldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.15, metalness: 0.2 });
     const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const vocalSacMat = new THREE.MeshStandardMaterial({ color: 0xbbf7d0, roughness: 0.4, transparent: true, opacity: 0.85 });
 
     this.charTorso = new THREE.Group();
 
-    // Tronco rechonchudo do sapo
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.48, 16, 16), frogGreenMat);
-    body.scale.set(1.1, 0.88, 1.0);
+    // Tronco rechonchudo com postura de anfíbio
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.50, 18, 18), frogGreenMat);
+    body.scale.set(1.15, 0.88, 1.05);
     body.position.y = 0.58;
     body.castShadow = true;
     this.charTorso.add(body);
 
-    // Barriga macia amarelada
-    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 14), frogBellyMat);
-    belly.position.set(0, 0.54, 0.20);
-    belly.scale.set(0.9, 0.8, 0.5);
+    // Barriga macia em tom verde-limão
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 16), frogBellyMat);
+    belly.position.set(0, 0.53, 0.22);
+    belly.scale.set(0.92, 0.82, 0.55);
     this.charTorso.add(belly);
 
-    // Cabeça larga de sapo
-    this.charHead = new THREE.Group();
-    this.charHead.position.y = 1.05;
+    // Manchas mosqueadas camufladas no dorso
+    const spotCoords = [
+      { x: -0.22, y: 0.72, z: -0.26, s: 0.09 },
+      { x: 0.24, y: 0.75, z: -0.22, s: 0.11 },
+      { x: 0, y: 0.82, z: -0.32, s: 0.12 },
+      { x: -0.26, y: 0.58, z: -0.35, s: 0.08 },
+      { x: 0.28, y: 0.60, z: -0.33, s: 0.08 }
+    ];
+    for (const sp of spotCoords) {
+      const spot = new THREE.Mesh(new THREE.SphereGeometry(sp.s, 8, 8), frogSpotMat);
+      spot.position.set(sp.x, sp.y, sp.z);
+      spot.scale.set(1.2, 0.4, 1.2);
+      this.charTorso.add(spot);
+    }
 
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), frogGreenMat);
-    headMesh.scale.set(1.2, 0.75, 1.1);
+    // Cabeça larga e expressiva
+    this.charHead = new THREE.Group();
+    this.charHead.position.y = 1.06;
+
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.44, 18, 18), frogGreenMat);
+    headMesh.scale.set(1.24, 0.76, 1.15);
     headMesh.castShadow = true;
     this.charHead.add(headMesh);
 
-    // Olhos bulbosos proeminentes no topo da cabeça
+    // Olhos bulbosos salientes com pálpebras modeladas
     for (const side of [-1, 1]) {
-      const eyeSocket = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), frogGreenMat);
-      eyeSocket.position.set(side * 0.24, 0.24, 0.15);
+      const eyeSocket = new THREE.Mesh(new THREE.SphereGeometry(0.19, 14, 14), frogGreenMat);
+      eyeSocket.position.set(side * 0.25, 0.24, 0.15);
       this.charHead.add(eyeSocket);
 
+      const eyelid = new THREE.Mesh(new THREE.SphereGeometry(0.20, 12, 12, 0, Math.PI * 2, 0, Math.PI * 0.4), frogGreenMat);
+      eyelid.position.set(side * 0.25, 0.28, 0.18);
+      eyelid.rotation.x = -0.3;
+      this.charHead.add(eyelid);
+
       const eyeGlobe = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeGoldMat);
-      eyeGlobe.position.set(side * 0.24, 0.26, 0.22);
-      const pupil = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.04), pupilMat);
-      pupil.position.set(side * 0.24, 0.26, 0.34);
-      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      glint.position.set(side * 0.22, 0.28, 0.35);
+      eyeGlobe.position.set(side * 0.25, 0.26, 0.23);
+
+      // Pupila horizontal característica de anfíbios
+      const pupil = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.038, 0.04), pupilMat);
+      pupil.position.set(side * 0.25, 0.26, 0.35);
+
+      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      glint.position.set(side * 0.23, 0.285, 0.36);
+
       this.charHead.add(eyeGlobe, pupil, glint);
+
+      // Bolsas vocais nas bochechas que inflam suavemente
+      const vocalSac = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), vocalSacMat);
+      vocalSac.position.set(side * 0.38, -0.04, 0.18);
+      vocalSac.scale.set(1.0, 0.85, 1.1);
+      this.charHead.add(vocalSac);
     }
 
-    // Sorriso largo de sapo
-    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.02, 6, 14, Math.PI * 0.7), new THREE.MeshBasicMaterial({ color: 0x14532d }));
-    mouth.rotation.set(Math.PI * 0.85, 0, Math.PI * 0.15);
-    mouth.position.set(0, -0.06, 0.44);
+    // Sorriso alegre largo
+    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.024, 6, 16, Math.PI * 0.72), new THREE.MeshBasicMaterial({ color: 0x14532d }));
+    mouth.rotation.set(Math.PI * 0.86, 0, Math.PI * 0.14);
+    mouth.position.set(0, -0.06, 0.46);
     this.charHead.add(mouth);
 
     this.attachEquippedHat(this.charHead);
@@ -760,177 +965,135 @@ class SnowSlideTPSMasterEngine {
     this.charTorso.add(this.charHead);
     this.attachEquippedScarf(this.charTorso);
 
-    // Braços verdes com mãos espalmadas
-    this.charArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.45, 8, 8), frogGreenMat);
-    this.charArmL.position.set(-0.52, 0.58, 0.1);
-    this.charArmL.rotation.set(0.1, 0, 0.35);
+    // Braços esguios com mãozinhas de ventosas esféricas
+    const createFrogArm = (side: number) => {
+      const armGroup = new THREE.Group();
+      const limb = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.45, 8, 8), frogGreenMat);
+      limb.position.y = -0.22;
+      armGroup.add(limb);
 
-    this.charArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.45, 8, 8), frogGreenMat);
-    this.charArmR.position.set(0.52, 0.58, 0.1);
-    this.charArmR.rotation.set(0.1, 0, -0.35);
+      // 3 dedinhos com pontas de ventosas esféricas
+      for (let d = -1; d <= 1; d++) {
+        const finger = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.14, 6), frogGreenMat);
+        finger.position.set(d * 0.06, -0.46, 0.05);
+        finger.rotation.x = 0.3;
 
+        const suctionPad = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), frogBellyMat);
+        suctionPad.position.set(d * 0.06, -0.52, 0.09);
+
+        armGroup.add(finger, suctionPad);
+      }
+      armGroup.position.set(side * 0.54, 0.58, 0.1);
+      armGroup.rotation.set(0.1, 0, side * -0.35);
+      return armGroup as any;
+    };
+
+    this.charArmL = createFrogArm(-1);
+    this.charArmR = createFrogArm(1);
     this.charTorso.add(this.charArmL, this.charArmR);
     root.add(this.charTorso);
 
-    // Patas traseiras de sapo
-    this.charFootL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.42), frogGreenMat);
-    this.charFootL.position.set(-0.28, 0.05, 0.14);
-    this.charFootL.castShadow = true;
+    // Patas traseiras saltitantes com ventosas
+    const createFrogFoot = (posX: number) => {
+      const foot = new THREE.Group();
+      const heel = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.40), frogGreenMat);
+      heel.position.set(0, 0.04, 0.12);
+      heel.castShadow = true;
+      foot.add(heel);
 
-    this.charFootR = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.42), frogGreenMat);
-    this.charFootR.position.set(0.28, 0.05, 0.14);
-    this.charFootR.castShadow = true;
+      for (let toe = -1; toe <= 1; toe++) {
+        const toeMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.18, 6), frogGreenMat);
+        toeMesh.rotation.x = Math.PI / 2;
+        toeMesh.position.set(toe * 0.09, 0.04, 0.32);
 
+        const pad = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), frogBellyMat);
+        pad.position.set(toe * 0.09, 0.04, 0.42);
+
+        foot.add(toeMesh, pad);
+      }
+      foot.position.set(posX, 0.04, 0.12);
+      return foot as any;
+    };
+
+    this.charFootL = createFrogFoot(-0.28);
+    this.charFootR = createFrogFoot(0.28);
     root.add(this.charFootL, this.charFootR);
     this.charTail = null;
     return root;
   }
 
-  // 3. GATO SIAMÊS
+  // 3. GATO SIAMÊS ULTRA-DETALHADO
   private createDetailedCat(): THREE.Group {
     const root = new THREE.Group();
-    const furCreamMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.6 });
-    const sealBrownMat = new THREE.MeshStandardMaterial({ color: 0x3b1d11, roughness: 0.5 });
+    const furCreamMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.55 });
+    const sealBrownMat = new THREE.MeshStandardMaterial({ color: 0x2b150c, roughness: 0.48 });
     const innerEarPinkMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.4 });
-    const sapphireEyeMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.1, metalness: 0.2 });
+    const sapphireEyeMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.15, metalness: 0.3 });
     const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const whiskerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     this.charTorso = new THREE.Group();
 
-    // Tronco gracioso de gato
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.38, 0.62, 14, 14), furCreamMat);
-    body.position.y = 0.64;
-    body.castShadow = true;
-    this.charTorso.add(body);
-
-    // Cabeça felina com máscara marrom escura (padrão siamês)
-    this.charHead = new THREE.Group();
-    this.charHead.position.y = 1.18;
-
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), furCreamMat);
-    headMesh.castShadow = true;
-    this.charHead.add(headMesh);
-
-    const mask = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), sealBrownMat);
-    mask.scale.set(1.05, 0.85, 0.65);
-    mask.position.set(0, -0.04, 0.22);
-    this.charHead.add(mask);
-
-    // Focinho e nariz rosa
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.06, 5), innerEarPinkMat);
-    nose.rotation.x = -Math.PI / 2;
-    nose.position.set(0, -0.02, 0.40);
-    this.charHead.add(nose);
-
-    // Orelhas triangulares siamesas
-    for (const side of [-1, 1]) {
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 4), sealBrownMat);
-      ear.position.set(side * 0.22, 0.36, 0.02);
-      ear.rotation.set(0.1, 0, -side * 0.32);
-      const innerEar = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.18, 4), innerEarPinkMat);
-      innerEar.position.set(side * 0.21, 0.34, 0.06);
-      innerEar.rotation.set(0.1, 0, -side * 0.32);
-      this.charHead.add(ear, innerEar);
-
-      // Olhos amendoados de safira
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), sapphireEyeMat);
-      eye.position.set(side * 0.12, 0.05, 0.31);
-      const pupil = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.08, 4, 4), pupilMat);
-      pupil.position.set(side * 0.12, 0.05, 0.37);
-      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      glint.position.set(side * 0.10 + 0.015, 0.07, 0.385);
-      this.charHead.add(eye, pupil, glint);
-    }
-
-    this.attachEquippedHat(this.charHead);
-    this.attachEquippedGoggles(this.charHead);
-    this.charTorso.add(this.charHead);
-    this.attachEquippedScarf(this.charTorso);
-
-    // Patinhas dianteiras escuras
-    this.charArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.46, 8, 8), sealBrownMat);
-    this.charArmL.position.set(-0.42, 0.58, 0.08);
-    this.charArmL.rotation.set(-0.15, 0, 0.3);
-
-    this.charArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.46, 8, 8), sealBrownMat);
-    this.charArmR.position.set(0.42, 0.58, 0.08);
-    this.charArmR.rotation.set(-0.15, 0, -0.3);
-
-    this.charTorso.add(this.charArmL, this.charArmR);
-
-    // Cauda longa elegante siamesa
-    this.charTail = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.75, 8), sealBrownMat);
-    this.charTail.position.set(0, 0.45, -0.45);
-    this.charTail.rotation.set(-0.95, 0, 0);
-    this.charTorso.add(this.charTail);
-
-    root.add(this.charTorso);
-
-    // Patas traseiras marrom escuras
-    this.charFootL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.09, 0.34), sealBrownMat);
-    this.charFootL.position.set(-0.20, 0.06, 0.10);
-    this.charFootL.castShadow = true;
-
-    this.charFootR = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.09, 0.34), sealBrownMat);
-    this.charFootR.position.set(0.20, 0.06, 0.10);
-    this.charFootR.castShadow = true;
-
-    root.add(this.charFootL, this.charFootR);
-    return root;
-  }
-
-  // 4. CACHORRO SHIH TZU
-  private createDetailedDog(): THREE.Group {
-    const root = new THREE.Group();
-    const caramelMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 });
-    const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
-    const noseBlackMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3 });
-    const eyeBrownMat = new THREE.MeshStandardMaterial({ color: 0x27170a, roughness: 0.2 });
-
-    this.charTorso = new THREE.Group();
-
-    // Tronco peludo caramelo com peitoral branco
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.64, 14, 14), caramelMat);
+    // Tronco gracioso siamês com postura esguia
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.38, 0.64, 16, 16), furCreamMat);
     body.position.y = 0.65;
     body.castShadow = true;
     this.charTorso.add(body);
 
-    const chestFur = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 12), whiteFurMat);
-    chestFur.position.set(0, 0.66, 0.20);
-    chestFur.scale.set(0.9, 0.95, 0.6);
-    this.charTorso.add(chestFur);
-
-    // Cabeça fofa de Shih Tzu
+    // Cabeça felina com máscara clássica em diamante
     this.charHead = new THREE.Group();
     this.charHead.position.y = 1.20;
 
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 16), caramelMat);
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.36, 18, 18), furCreamMat);
     headMesh.castShadow = true;
     this.charHead.add(headMesh);
 
-    // Focinho achatado branco
-    const snout = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.22), whiteFurMat);
-    snout.position.set(0, -0.05, 0.32);
-    this.charHead.add(snout);
+    // Máscara siamesa chocolate no rosto
+    const mask = new THREE.Mesh(new THREE.SphereGeometry(0.25, 14, 14), sealBrownMat);
+    mask.scale.set(1.08, 0.88, 0.68);
+    mask.position.set(0, -0.03, 0.22);
+    this.charHead.add(mask);
 
-    // Nariz botão preto
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), noseBlackMat);
-    nose.position.set(0, 0.02, 0.44);
+    // Focinho e nariz rosado
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.07, 5), innerEarPinkMat);
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.set(0, -0.02, 0.41);
     this.charHead.add(nose);
 
-    // Orelhas caídas e peludas (assinatura do Shih Tzu)
+    // Bigodes 3D realistas dos dois lados
     for (const side of [-1, 1]) {
-      const ear = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.44, 8, 8), caramelMat);
-      ear.position.set(side * 0.38, 0.08, 0.06);
-      ear.rotation.set(0.2, 0, side * 0.15);
-      this.charHead.add(ear);
+      for (let w = -1; w <= 1; w++) {
+        const whisker = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.32, 4), whiskerMat);
+        whisker.rotation.z = Math.PI / 2 + w * 0.15;
+        whisker.rotation.y = side * 0.35;
+        whisker.position.set(side * 0.22, -0.05 + w * 0.03, 0.36);
+        this.charHead.add(whisker);
+      }
+    }
 
-      // Olhos expressivos castanhos
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 10), eyeBrownMat);
-      eye.position.set(side * 0.13, 0.08, 0.33);
-      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      glint.position.set(side * 0.115, 0.10, 0.39);
-      this.charHead.add(eye, glint);
+    // Orelhas pontiagudas com interior aveludado
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.28, 4), sealBrownMat);
+      ear.position.set(side * 0.23, 0.36, 0.02);
+      ear.rotation.set(0.12, 0, -side * 0.34);
+
+      const innerEar = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.20, 4), innerEarPinkMat);
+      innerEar.position.set(side * 0.22, 0.34, 0.06);
+      innerEar.rotation.set(0.12, 0, -side * 0.34);
+
+      this.charHead.add(ear, innerEar);
+
+      // Olhos amendoados de safira com pupila vertical felina
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.078, 12, 12), sapphireEyeMat);
+      eye.position.set(side * 0.13, 0.06, 0.31);
+
+      const pupil = new THREE.Mesh(new THREE.CapsuleGeometry(0.016, 0.075, 4, 4), pupilMat);
+      pupil.position.set(side * 0.13, 0.06, 0.375);
+
+      const glint1 = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      glint1.position.set(side * 0.11 + 0.015, 0.08, 0.39);
+
+      this.charHead.add(eye, pupil, glint1);
     }
 
     this.attachEquippedHat(this.charHead);
@@ -938,31 +1101,188 @@ class SnowSlideTPSMasterEngine {
     this.charTorso.add(this.charHead);
     this.attachEquippedScarf(this.charTorso);
 
-    // Patinhas dianteiras fofas brancas
-    this.charArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.10, 0.46, 8, 8), whiteFurMat);
+    // Patinhas dianteiras em tom chocolate com almofadinhas
+    const createCatForepaw = (side: number) => {
+      const pawGroup = new THREE.Group();
+      const limb = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.46, 8, 8), sealBrownMat);
+      limb.position.y = -0.22;
+      limb.castShadow = true;
+      pawGroup.add(limb);
+
+      // Almofadinha na ponta da pata
+      const pad = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), innerEarPinkMat);
+      pad.position.set(0, -0.44, 0.04);
+      pawGroup.add(pad);
+
+      pawGroup.position.set(side * 0.42, 0.58, 0.08);
+      pawGroup.rotation.set(-0.15, 0, side * -0.3);
+      return pawGroup as any;
+    };
+
+    this.charArmL = createCatForepaw(-1);
+    this.charArmR = createCatForepaw(1);
+    this.charTorso.add(this.charArmL, this.charArmR);
+
+    // Cauda longa elegante com curva charmosa
+    this.charTail = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.038, 0.78, 10), sealBrownMat);
+    this.charTail.position.set(0, 0.44, -0.45);
+    this.charTail.rotation.set(-1.05, 0, 0);
+    this.charTorso.add(this.charTail);
+
+    root.add(this.charTorso);
+
+    // Patas traseiras marrom-chocolate com dedinhos
+    const createCatHindFoot = (posX: number) => {
+      const foot = new THREE.Group();
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.09, 0.35), sealBrownMat);
+      sole.position.set(0, 0.05, 0.10);
+      sole.castShadow = true;
+      foot.add(sole);
+
+      // Almofadas da sola
+      const solePad = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), innerEarPinkMat);
+      solePad.position.set(0, 0.03, 0.22);
+      foot.add(solePad);
+
+      foot.position.set(posX, 0.06, 0.10);
+      return foot as any;
+    };
+
+    this.charFootL = createCatHindFoot(-0.20);
+    this.charFootR = createCatHindFoot(0.20);
+    root.add(this.charFootL, this.charFootR);
+
+    return root;
+  }
+
+  // 4. CACHORRO SHIH TZU ULTRA-DETALHADO
+  private createDetailedDog(): THREE.Group {
+    const root = new THREE.Group();
+    const caramelMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.75 });
+    const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
+    const noseBlackMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.25 });
+    const tonguePinkMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.4 });
+    const ribbonRedMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+    const eyeBrownMat = new THREE.MeshStandardMaterial({ color: 0x27170a, roughness: 0.18 });
+
+    this.charTorso = new THREE.Group();
+
+    // Tronco peludo caramelo
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.43, 0.65, 16, 16), caramelMat);
+    body.position.y = 0.65;
+    body.castShadow = true;
+    this.charTorso.add(body);
+
+    // Peitoral farto e peludo branco
+    const chestFur = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14), whiteFurMat);
+    chestFur.position.set(0, 0.66, 0.21);
+    chestFur.scale.set(0.92, 0.98, 0.62);
+    this.charTorso.add(chestFur);
+
+    // Cabeça fofa de Shih Tzu
+    this.charHead = new THREE.Group();
+    this.charHead.position.y = 1.22;
+
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.39, 18, 18), caramelMat);
+    headMesh.castShadow = true;
+    this.charHead.add(headMesh);
+
+    // Topete característico com laço de fita no topo da cabeça
+    const topKnot = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.24, 6), caramelMat);
+    topKnot.position.set(0, 0.42, 0.05);
+    topKnot.rotation.set(-0.15, 0, 0);
+
+    const bowKnot = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), ribbonRedMat);
+    bowKnot.position.set(0, 0.38, 0.12);
+
+    const bowL = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.10, 4), ribbonRedMat);
+    bowL.rotation.z = Math.PI / 2;
+    bowL.position.set(-0.07, 0.38, 0.12);
+
+    const bowR = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.10, 4), ribbonRedMat);
+    bowR.rotation.z = -Math.PI / 2;
+    bowR.position.set(0.07, 0.38, 0.12);
+
+    this.charHead.add(topKnot, bowKnot, bowL, bowR);
+
+    // Focinho achatado característico com bigode branco
+    const snout = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.19, 0.23), whiteFurMat);
+    snout.position.set(0, -0.05, 0.33);
+    this.charHead.add(snout);
+
+    // Nariz botão preto com formato de coração/oval
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 8), noseBlackMat);
+    nose.position.set(0, 0.02, 0.45);
+    this.charHead.add(nose);
+
+    // Linguinha rosada saltando para fora
+    const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.025, 0.09), tonguePinkMat);
+    tongue.position.set(0, -0.11, 0.44);
+    tongue.rotation.x = 0.25;
+    this.charHead.add(tongue);
+
+    // Orelhas caídas fartas com pelos em camadas
+    for (const side of [-1, 1]) {
+      const earMain = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.46, 10, 10), caramelMat);
+      earMain.position.set(side * 0.39, 0.08, 0.06);
+      earMain.rotation.set(0.2, 0, side * 0.18);
+
+      const earHighlight = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.36, 8, 8), whiteFurMat);
+      earHighlight.position.set(side * 0.38, 0.04, 0.11);
+      earHighlight.rotation.set(0.2, 0, side * 0.18);
+
+      this.charHead.add(earMain, earHighlight);
+
+      // Olhos castanhos brilhantes e dengosos
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), eyeBrownMat);
+      eye.position.set(side * 0.135, 0.08, 0.34);
+
+      const glint1 = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      glint1.position.set(side * 0.118, 0.105, 0.40);
+      const glint2 = new THREE.Mesh(new THREE.SphereGeometry(0.010, 5, 5), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      glint2.position.set(side * 0.145, 0.065, 0.40);
+
+      this.charHead.add(eye, glint1, glint2);
+    }
+
+    this.attachEquippedHat(this.charHead);
+    this.attachEquippedGoggles(this.charHead);
+    this.charTorso.add(this.charHead);
+    this.attachEquippedScarf(this.charTorso);
+
+    // Patinhas dianteiras felpudas brancas
+    this.charArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.48, 8, 8), whiteFurMat);
     this.charArmL.position.set(-0.46, 0.58, 0.06);
     this.charArmL.rotation.set(-0.15, 0, 0.28);
 
-    this.charArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.10, 0.46, 8, 8), whiteFurMat);
+    this.charArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.48, 8, 8), whiteFurMat);
     this.charArmR.position.set(0.46, 0.58, 0.06);
     this.charArmR.rotation.set(-0.15, 0, -0.28);
 
     this.charTorso.add(this.charArmL, this.charArmR);
 
-    // Rabinho pom-pom enrolado nas costas
-    this.charTail = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 10), whiteFurMat);
-    this.charTail.position.set(0, 0.72, -0.42);
-    this.charTail.scale.set(0.9, 1.2, 1.0);
-    this.charTorso.add(this.charTail);
+    // Rabinho pom-pom exuberante enrolado nas costas
+    const tailGroup = new THREE.Group();
+    const tailPlume = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), whiteFurMat);
+    tailPlume.scale.set(0.9, 1.3, 1.1);
+
+    const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.18, 5), caramelMat);
+    tailTip.position.set(0, 0.16, -0.06);
+    tailTip.rotation.x = -0.4;
+
+    tailGroup.add(tailPlume, tailTip);
+    tailGroup.position.set(0, 0.74, -0.42);
+    this.charTail = tailGroup;
+    this.charTorso.add(tailGroup);
 
     root.add(this.charTorso);
 
-    // Patas traseiras brancas
-    this.charFootL = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.10, 0.35), whiteFurMat);
+    // Patas traseiras brancas com almofadas
+    this.charFootL = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.11, 0.36), whiteFurMat);
     this.charFootL.position.set(-0.22, 0.06, 0.10);
     this.charFootL.castShadow = true;
 
-    this.charFootR = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.10, 0.35), whiteFurMat);
+    this.charFootR = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.11, 0.36), whiteFurMat);
     this.charFootR.position.set(0.22, 0.06, 0.10);
     this.charFootR.castShadow = true;
 
@@ -1613,13 +1933,18 @@ class SnowSlideTPSMasterEngine {
   // =========================================================================
   // ARREMESSO DE BOLAS DE NEVE COM O BOTÃO ESQUERDO DO MOUSE
   // =========================================================================
-  private throwSnowball() {
-    if (this.currentScene !== 'HUB') return;
+  // =========================================================================
+  // ARREMESSO DE BOLAS DE NEVE (FÍSICA BALÍSTICA SUAVE & CARGA DE FORÇA)
+  // =========================================================================
+  private throwSnowball(chargeRatio = 0.5) {
+    if (this.currentScene !== 'HUB' && this.currentScene !== 'SNOWBALL_WAR') return;
     if (this.isAnyModalOpen()) return;
 
     const now = Date.now();
-    if (now - this.lastSnowballTime < 240) return;
+    if (now - this.lastSnowballTime < 200) return;
     this.lastSnowballTime = now;
+
+    const c = Math.max(0.2, Math.min(1.0, chargeRatio));
 
     // Direção da mira da câmera
     const cosPitch = Math.cos(this.cameraAngleX);
@@ -1627,9 +1952,10 @@ class SnowSlideTPSMasterEngine {
     const sinYaw = Math.sin(this.cameraAngleY);
     const cosYaw = Math.cos(this.cameraAngleY);
 
-    const speed = 1.35;
+    // Velocidade proporcional à carga (entre 0.38 e 0.82)
+    const speed = 0.38 + c * 0.44;
     const vx = -sinYaw * cosPitch * speed;
-    const vy = Math.max(0.06, -sinPitch * speed + 0.24);
+    const vy = Math.max(0.04, -sinPitch * speed + (0.08 + c * 0.14));
     const vz = -cosYaw * cosPitch * speed;
 
     const snowballGeo = new THREE.SphereGeometry(0.22, 10, 10);
@@ -1639,8 +1965,8 @@ class SnowSlideTPSMasterEngine {
     mesh.castShadow = true;
     this.scene.add(mesh);
 
-    this.snowballs.push({ mesh, vx, vy, vz, life: 0 });
-    this.playSnowThrowSound();
+    this.snowballs.push({ mesh, vx, vy, vz, life: 0, isEnemy: false });
+    this.playSnowThrowSound(c);
   }
 
   private updateSnowballs() {
@@ -1649,11 +1975,13 @@ class SnowSlideTPSMasterEngine {
       sb.mesh.position.x += sb.vx;
       sb.mesh.position.y += sb.vy;
       sb.mesh.position.z += sb.vz;
-      sb.vy -= 0.016; // Gravidade
+      sb.vy -= 0.009; // Gravidade balística mais suave e realista
+      sb.vx *= 0.994; // Arrasto aerodinâmico
+      sb.vz *= 0.994;
       sb.life++;
 
-      sb.mesh.rotation.x += 0.2;
-      sb.mesh.rotation.z += 0.2;
+      sb.mesh.rotation.x += 0.15;
+      sb.mesh.rotation.z += 0.15;
 
       let splat = false;
 
@@ -1662,11 +1990,12 @@ class SnowSlideTPSMasterEngine {
         splat = true;
       }
 
-      // Colisão com os NPCs que circulam
-      if (!splat) {
+      // Colisão no HUB
+      if (this.currentScene === 'HUB' && !splat) {
+        // Colisão com os NPCs que circulam
         for (const npc of this.wanderingNPCs) {
           const distNpc = sb.mesh.position.distanceTo(npc.mesh.position);
-          if (distNpc < 1.1) {
+          if (distNpc < 1.15) {
             splat = true;
             npc.state = 'hit';
             npc.reactionTimer = 45;
@@ -1675,19 +2004,105 @@ class SnowSlideTPSMasterEngine {
             break;
           }
         }
-      }
 
-      // Colisão com o Boneco de Neve
-      if (!splat) {
-        const distSnowman = sb.mesh.position.distanceTo(new THREE.Vector3(-12, 1.8, 8));
-        if (distSnowman < 1.6) {
-          splat = true;
-          this.showToast('Você acertou em cheio o Boneco de Neve! ⛄❄️', 'success');
+        // Colisão com o Boneco de Neve
+        if (!splat) {
+          const distSnowman = sb.mesh.position.distanceTo(new THREE.Vector3(-12, 1.8, 8));
+          if (distSnowman < 1.6) {
+            splat = true;
+            this.showToast('Você acertou em cheio o Boneco de Neve! ⛄❄️', 'success');
+          }
         }
       }
 
-      // Tempo de vida máximo (120 frames)
-      if (sb.life > 120) {
+      // Colisão na ARENA DE GUERRA DE NEVE
+      if (this.currentScene === 'SNOWBALL_WAR' && !splat) {
+        // Colisão com muretas e obstáculos do labirinto
+        for (const obs of this.warObstacles) {
+          if (
+            Math.abs(sb.mesh.position.x - obs.x) < obs.hw + 0.15 &&
+            Math.abs(sb.mesh.position.z - obs.z) < obs.hd + 0.15 &&
+            sb.mesh.position.y < obs.height
+          ) {
+            splat = true;
+            break;
+          }
+        }
+
+        // Bola do jogador acertando bot adversário
+        if (!splat && !sb.isEnemy) {
+          for (const bot of this.warBots) {
+            if (bot.health > 0 && bot.state !== 'frozen') {
+              const distBot = sb.mesh.position.distanceTo(new THREE.Vector3(bot.pos.x, bot.pos.y + 0.8, bot.pos.z));
+              if (distBot < 1.25) {
+                splat = true;
+                bot.health--;
+                this.warHits++;
+                this.warScore += 50;
+                bot.stateTimer = 20;
+
+                if (bot.health <= 0) {
+                  bot.health = 0;
+                  bot.state = 'frozen';
+                  bot.stateTimer = 180; // Congelado por 3s
+                  this.warKOs++;
+                  this.warScore += 200;
+
+                  // Cria bloco de gelo ao redor do bot
+                  const iceGeo = new THREE.BoxGeometry(1.6, 2.2, 1.6);
+                  const iceMat = new THREE.MeshStandardMaterial({
+                    color: 0x38bdf8,
+                    transparent: true,
+                    opacity: 0.75,
+                    roughness: 0.1,
+                    metalness: 0.3
+                  });
+                  const iceCube = new THREE.Mesh(iceGeo, iceMat);
+                  iceCube.position.set(bot.pos.x, 1.1, bot.pos.z);
+                  this.scene.add(iceCube);
+                  bot.iceCube = iceCube;
+
+                  this.showToast(`❄️ KO! Você congelou ${bot.name}! (+200 pts)`, 'success');
+                } else {
+                  this.showToast(`Acertou ${bot.name}! (${bot.health}/3 vidas) ❄️`, 'info');
+                }
+
+                // Atualiza HUD da arena
+                const kosEl = document.getElementById('war-kos-val');
+                if (kosEl) kosEl.textContent = this.warKOs.toString();
+                const scoreEl = document.getElementById('war-score-val');
+                if (scoreEl) scoreEl.textContent = this.warScore.toString();
+                break;
+              }
+            }
+          }
+        }
+
+        // Bola inimiga acertando o jogador
+        if (!splat && sb.isEnemy) {
+          const playerHeadPos = new THREE.Vector3(this.playerPosX, this.playerPosY + 0.85, this.playerPosZ);
+          if (sb.mesh.position.distanceTo(playerHeadPos) < 1.15 && !this.isPlayerWarInvuln) {
+            splat = true;
+            this.warPlayerHealth--;
+            this.isPlayerWarInvuln = true;
+            this.playerWarInvulnTimer = 90; // 1.5s invulnerável
+
+            this.updateWarHUDHearts();
+            this.showToast(`Você foi atingido! Vidas restantes: ${this.warPlayerHealth}/3 ❤️`, 'warning');
+
+            if (this.warPlayerHealth <= 0) {
+              this.warPlayerHealth = 3;
+              this.updateWarHUDHearts();
+              this.playerPosX = -22;
+              this.playerPosZ = -22;
+              this.showToast('Você foi congelado e renasceu no bunker inicial!', 'warning');
+            }
+          }
+        }
+      }
+
+      // Tempo de vida máximo (140 frames)
+      if (sb.life > 140) {
         splat = true;
       }
 
@@ -1698,6 +2113,16 @@ class SnowSlideTPSMasterEngine {
         this.snowballs.splice(i, 1);
       }
     }
+  }
+
+  private updateWarHUDHearts() {
+    const heartsEl = document.getElementById('war-hearts');
+    if (!heartsEl) return;
+    let hStr = '';
+    for (let i = 0; i < 3; i++) {
+      hStr += i < this.warPlayerHealth ? '❤️' : '🖤';
+    }
+    heartsEl.textContent = hStr;
   }
 
   // =========================================================================
@@ -1972,6 +2397,145 @@ class SnowSlideTPSMasterEngine {
     });
 
     return booth;
+  }
+
+  // Estande de Tiro ao Alvo do Festival (Circo Alpino)
+  private createCarnivalBooth(x: number, z: number): THREE.Group {
+    const booth = new THREE.Group();
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.75 });
+    const redCanvasMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 });
+    const whiteCanvasMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 });
+
+    // Plataforma do chão da barraca
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.4, 6.0), woodMat);
+    floor.position.y = 0.2;
+    floor.receiveShadow = true;
+    booth.add(floor);
+
+    // Balcão de atendimento frontal
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(7.6, 1.3, 0.8), woodMat);
+    counter.position.set(0, 0.95, -2.2);
+    counter.castShadow = true;
+    booth.add(counter);
+
+    // Suporte para espingardas de brinquedo no balcão
+    for (const rx of [-2.2, 0, 2.2]) {
+      const rack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.6), woodMat);
+      rack.position.set(rx, 1.7, -2.2);
+      const rifleBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6), goldMat);
+      rifleBarrel.rotation.x = Math.PI / 2;
+      rifleBarrel.position.set(rx, 1.85, -2.1);
+      booth.add(rack, rifleBarrel);
+    }
+
+    // 4 Pilares de sustentação
+    for (const [px, pz] of [[-3.8, -2.6], [3.8, -2.6], [-3.8, 2.6], [3.8, 2.6]]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 4.5, 8), woodMat);
+      post.position.set(px, 2.45, pz);
+      post.castShadow = true;
+      booth.add(post);
+    }
+
+    // Teto listrado de circo/festival (listras alternadas vermelho e branco)
+    const stripeCount = 10;
+    const stripeWidth = 8.6 / stripeCount;
+    for (let i = 0; i < stripeCount; i++) {
+      const isRed = i % 2 === 0;
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(stripeWidth, 0.25, 6.4),
+        isRed ? redCanvasMat : whiteCanvasMat
+      );
+      stripe.position.set(-4.3 + stripeWidth * (i + 0.5), 4.7, 0);
+      stripe.rotation.x = 0.12;
+      stripe.castShadow = true;
+      booth.add(stripe);
+    }
+
+    // Toldo frontal com babados (scalloped fringe)
+    for (let i = 0; i < stripeCount; i++) {
+      const fringe = new THREE.Mesh(
+        new THREE.ConeGeometry(0.42, 0.6, 4),
+        (i % 2 === 0) ? redCanvasMat : whiteCanvasMat
+      );
+      fringe.rotation.x = Math.PI;
+      fringe.position.set(-4.3 + stripeWidth * (i + 0.5), 4.3, -3.15);
+      booth.add(fringe);
+    }
+
+    // Prateleiras de exposição no fundo com alvos decorativos
+    for (let s = 1; s <= 3; s++) {
+      const shelf = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.14, 0.6), woodMat);
+      shelf.position.set(0, 1.2 + s * 0.9, 2.4);
+      booth.add(shelf);
+
+      // Patinhos decorativos na prateleira
+      for (let d = -2.5; d <= 2.5; d += 1.6) {
+        const duckDeco = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), goldMat);
+        duckDeco.position.set(d, 1.45 + s * 0.9, 2.4);
+        booth.add(duckDeco);
+      }
+    }
+
+    // Lanterna com iluminação quente de parque
+    const light = new THREE.PointLight(0xf59e0b, 2.2, 14);
+    light.position.set(0, 3.8, 0);
+    booth.add(light);
+
+    booth.position.set(x, 0, z);
+    return booth;
+  }
+
+  // Portal Monumental da Arena de Guerra de Neve
+  private createSnowballWarPortal(x: number, z: number): THREE.Group {
+    const portal = new THREE.Group();
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
+    const iceMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2, metalness: 0.3, transparent: true, opacity: 0.85 });
+    const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.95 });
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.8 });
+
+    // Pilares de pedra/gelo do portal
+    for (const side of [-1, 1]) {
+      const pilar = new THREE.Mesh(new THREE.BoxGeometry(2.0, 7.5, 2.0), stoneMat);
+      pilar.position.set(side * 3.6, 3.75, 0);
+      pilar.castShadow = true;
+
+      // Cristas de gelo translúcido no topo
+      const iceCap = new THREE.Mesh(new THREE.ConeGeometry(1.4, 2.2, 5), iceMat);
+      iceCap.position.set(side * 3.6, 8.2, 0);
+
+      // Tocha de fogo azul polar
+      const torchHolder = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.8, 6), woodMat);
+      torchHolder.position.set(side * 2.5, 3.8, 1.1);
+      torchHolder.rotation.x = 0.4;
+      const torchFlame = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      torchFlame.position.set(side * 2.5, 4.3, 1.3);
+
+      const torchLight = new THREE.PointLight(0x38bdf8, 1.8, 10);
+      torchLight.position.copy(torchFlame.position);
+
+      portal.add(pilar, iceCap, torchHolder, torchFlame, torchLight);
+    }
+
+    // Arco de gelo superior
+    const arch = new THREE.Mesh(new THREE.BoxGeometry(9.2, 1.4, 2.2), stoneMat);
+    arch.position.set(0, 7.0, 0);
+
+    const archIce = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.8, 2.4), iceMat);
+    archIce.position.set(0, 7.8, 0);
+
+    const snowCap = new THREE.Mesh(new THREE.BoxGeometry(9.5, 0.6, 2.5), snowMat);
+    snowCap.position.set(0, 8.4, 0);
+
+    // Estandartes da arena
+    const bannerL = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 3.2), new THREE.MeshStandardMaterial({ color: 0x0284c7, side: THREE.DoubleSide }));
+    bannerL.position.set(-3.6, 4.0, 1.05);
+    const bannerR = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 3.2), new THREE.MeshStandardMaterial({ color: 0x0284c7, side: THREE.DoubleSide }));
+    bannerR.position.set(3.6, 4.0, 1.05);
+
+    portal.add(arch, archIce, snowCap, bannerL, bannerR);
+    portal.position.set(x, 0, z);
+    return portal;
   }
 
   private createCableCarBaseStation(): THREE.Group {
@@ -2615,6 +3179,40 @@ class SnowSlideTPSMasterEngine {
       this.scene.add(p);
     }
 
+    // 15. Estande de Tiro ao Alvo do Festival (Circo Alpino)
+    this.scene.add(this.createCarnivalBooth(this.carnivalBoothPos.x, this.carnivalBoothPos.z));
+    this.scene.add(this.createTextSignboard(
+      18, 11.2, Math.PI,
+      '🎯 TIRO AO ALVO FESTIVO',
+      '🎪 PATINHOS, PRÊMIOS & DIVERSÃO',
+      '#f43f5e'
+    ));
+    this.hubColliders.push({
+      type: 'box',
+      x: this.carnivalBoothPos.x,
+      z: this.carnivalBoothPos.z,
+      hw: 4.4,
+      hd: 3.2,
+      angle: 0
+    });
+
+    // 16. Portal Monumental da Arena de Guerra de Neve
+    this.scene.add(this.createSnowballWarPortal(this.snowballWarPortalPos.x, this.snowballWarPortalPos.z));
+    this.scene.add(this.createTextSignboard(
+      -27.5, 14, -Math.PI / 4,
+      '❄️ ARENA GUERRA DE NEVE',
+      '⚔️ FORTES, TRINCHEIRAS & LABIRINTO',
+      '#06b6d4'
+    ));
+    this.hubColliders.push({
+      type: 'box',
+      x: this.snowballWarPortalPos.x,
+      z: this.snowballWarPortalPos.z,
+      hw: 4.8,
+      hd: 1.8,
+      angle: 0
+    });
+
     // RESET TOTAL DO JOGADOR NO HUB
     this.playerPosX = 0;
     this.playerPosZ = 0;
@@ -2629,7 +3227,12 @@ class SnowSlideTPSMasterEngine {
     this.nearAtelier = false;
     this.nearRecords = false;
     this.nearPhoneBooth = false;
+    this.nearCarnivalBooth = false;
+    this.nearSnowballWarPortal = false;
     this.nearBench = null;
+
+    if (this.shootingTimer) clearInterval(this.shootingTimer);
+    if (this.warTimer) clearInterval(this.warTimer);
 
     this.keyW = false;
     this.keyS = false;
@@ -2643,6 +3246,8 @@ class SnowSlideTPSMasterEngine {
 
     document.getElementById('hub-ui')!.style.display = 'block';
     document.getElementById('racing-hud')!.style.display = 'none';
+    document.getElementById('shooting-hud')!.style.display = 'none';
+    document.getElementById('snowball-war-hud')!.style.display = 'none';
     document.getElementById('back-hub-btn')!.style.display = 'none';
     
     // CORREÇÃO CRÍTICA DO BUG: Remove tela de cutscene
@@ -2652,6 +3257,10 @@ class SnowSlideTPSMasterEngine {
     document.getElementById('joystick-ui')!.style.display = 'block';
     document.getElementById('run-btn')!.style.display = 'flex';
     document.getElementById('race-finish-modal')!.style.display = 'none';
+    const shootModal = document.getElementById('shooting-results-modal');
+    if (shootModal) shootModal.style.display = 'none';
+    const warModal = document.getElementById('snowball-war-results-modal');
+    if (warModal) warModal.style.display = 'none';
 
     this.hideAllInteractivePrompts();
     this.closeAllModals();
@@ -2665,6 +3274,8 @@ class SnowSlideTPSMasterEngine {
       'atelier-shop-prompt',
       'records-prompt',
       'phone-booth-prompt',
+      'carnival-prompt',
+      'snowball-war-prompt',
       'sit-bench-prompt',
       'stand-up-prompt'
     ];
@@ -2919,6 +3530,797 @@ class SnowSlideTPSMasterEngine {
   }
 
   // =========================================================================
+  // MINIGAME 1: TIRO AO ALVO DO FESTIVAL (CIRCO ALPINO / ARMA DE BRINQUEDO)
+  // =========================================================================
+  private loadShootingGalleryScene() {
+    this.currentScene = 'SHOOTING_GALLERY';
+    this.scene.clear();
+    this.isSitting = false;
+    this.confettiPoints = null;
+    this.snowballs = [];
+
+    // Céu festivo do entardecer
+    this.scene.background = new THREE.Color(0x1e1b4b);
+    this.scene.fog = new THREE.FogExp2(0x1e1b4b, 0.005);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.95);
+    this.scene.add(ambient);
+
+    const stageLight = new THREE.PointLight(0xfef08a, 2.5, 25);
+    stageLight.position.set(0, 5.0, -4.0);
+    this.scene.add(stageLight);
+
+    // Estande de tiro de madeira
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+    const clothRed = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 });
+    const clothWhite = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+
+    // Balcão de apoio do atirador
+    const shooterCounter = new THREE.Mesh(new THREE.BoxGeometry(10, 1.1, 1.2), woodMat);
+    shooterCounter.position.set(0, 0.55, -2.0);
+    shooterCounter.receiveShadow = true;
+    this.scene.add(shooterCounter);
+
+    // Parede de fundo do estande
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(16, 8, 0.5), woodMat);
+    backWall.position.set(0, 3.5, -9.5);
+    this.scene.add(backWall);
+
+    // Toldo listrado festivo no topo
+    for (let i = 0; i < 16; i++) {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(1.0, 0.2, 5.5),
+        i % 2 === 0 ? clothRed : clothWhite
+      );
+      stripe.position.set(-7.5 + i * 1.0, 7.2, -6.5);
+      stripe.rotation.x = 0.2;
+      this.scene.add(stripe);
+    }
+
+    // 3 Prateleiras de alvos
+    const shelfY = [1.4, 2.7, 4.0];
+    for (const y of shelfY) {
+      const shelf = new THREE.Mesh(new THREE.BoxGeometry(14, 0.16, 0.7), woodMat);
+      shelf.position.set(0, y, -8.5);
+      this.scene.add(shelf);
+    }
+
+    // Criação da Espingarda de Brinquedo na visão do jogador
+    this.toyGunGroup = this.createToyPopGun();
+    this.camera.add(this.toyGunGroup);
+    this.scene.add(this.camera);
+
+    // Reset de variáveis do jogo
+    this.shootingScore = 0;
+    this.shootingHits = 0;
+    this.shootingShots = 0;
+    this.shootingCombo = 0;
+    this.shootingTimeLeft = 40;
+
+    // Spawna alvos móveis
+    this.spawnCarnivalTargets();
+
+    // Posiciona câmera na mira
+    this.camera.position.set(0, 1.65, 0);
+    this.camera.lookAt(0, 2.7, -8.5);
+    this.cameraAngleX = 0.05;
+    this.cameraAngleY = 0;
+
+    // Ajusta UI
+    document.getElementById('hub-ui')!.style.display = 'none';
+    document.getElementById('racing-hud')!.style.display = 'none';
+    document.getElementById('snowball-war-hud')!.style.display = 'none';
+    document.getElementById('shooting-hud')!.style.display = 'block';
+    document.getElementById('back-hub-btn')!.style.display = 'none';
+    document.getElementById('joystick-ui')!.style.display = 'none';
+    document.getElementById('run-btn')!.style.display = 'none';
+    document.getElementById('hub-crosshair')!.style.display = 'block';
+    this.hideAllInteractivePrompts();
+
+    this.updateShootingHUD();
+    this.playCarnivalHornSound();
+
+    // Inicia cronômetro da rodada
+    if (this.shootingTimer) clearInterval(this.shootingTimer);
+    this.shootingTimer = setInterval(() => {
+      this.shootingTimeLeft--;
+      const timeEl = document.getElementById('shooting-time-val');
+      if (timeEl) timeEl.textContent = this.shootingTimeLeft.toString();
+      if (this.shootingTimeLeft <= 0) {
+        clearInterval(this.shootingTimer);
+        this.endShootingGallery();
+      }
+    }, 1000);
+  }
+
+  private createToyPopGun(): THREE.Group {
+    const gun = new THREE.Group();
+    const woodStockMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.6 });
+    const brassMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.2 });
+    const corkMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.9 });
+    const stringMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+
+    // Coronha de madeira de brinquedo
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.42), woodStockMat);
+    stock.position.set(0, -0.06, 0.15);
+    stock.rotation.x = -0.3;
+
+    // Cano dourado de latão
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.65, 8), brassMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0, -0.22);
+
+    // Alavanca de mola de brinquedo
+    const lever = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 12, Math.PI), brassMat);
+    lever.rotation.x = Math.PI / 2;
+    lever.position.set(0, -0.09, 0.05);
+
+    // Rolha de brinquedo amarrada
+    const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.028, 0.09, 8), corkMat);
+    cork.rotation.x = Math.PI / 2;
+    cork.position.set(0, 0, -0.58);
+
+    // Cordinha da rolha
+    const string = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.18, 4), stringMat);
+    string.rotation.z = 0.5;
+    string.position.set(0.04, -0.06, -0.45);
+
+    gun.add(stock, barrel, lever, cork, string);
+    gun.position.set(0.32, -0.24, -0.65);
+    gun.rotation.set(0.05, -0.05, 0);
+    return gun;
+  }
+
+  private spawnCarnivalTargets() {
+    this.carnivalTargets = [];
+    const duckYellowMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 });
+    const duckOrangeMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+    const targetRingMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.5 });
+    const targetWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
+    const targetBullseyeMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8 });
+    const starGoldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.9, roughness: 0.15 });
+    const bombMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+
+    // 1. Prateleira Inferior: Patinhos de madeira clássicos que deslizam nos trilhos
+    for (let i = 0; i < 5; i++) {
+      const duck = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), duckYellowMat);
+      body.scale.set(1.2, 0.9, 0.8);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), duckYellowMat);
+      head.position.set(0.22, 0.22, 0);
+      const beak = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.16, 6), duckOrangeMat);
+      beak.rotation.z = -Math.PI / 2;
+      beak.position.set(0.36, 0.20, 0);
+      const baseStand = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.25, 6), duckOrangeMat);
+      baseStand.position.set(0, -0.25, 0);
+
+      duck.add(body, head, beak, baseStand);
+      const startX = -5.0 + i * 2.5;
+      duck.position.set(startX, 1.7, -8.5);
+      this.scene.add(duck);
+
+      this.carnivalTargets.push({
+        group: duck,
+        type: 'duck',
+        shelfIndex: 0,
+        x: startX,
+        baseY: 1.7,
+        z: -8.5,
+        speed: 0.04 + (i % 2) * 0.02,
+        dir: 1,
+        points: 20,
+        hit: false,
+        hitTimer: 0
+      });
+    }
+
+    // 2. Prateleira Média: Alvos circulares concêntricos giratórios
+    for (let i = 0; i < 4; i++) {
+      const targetGroup = new THREE.Group();
+      const outerRing = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.44, 0.06, 16), targetRingMat);
+      outerRing.rotation.x = Math.PI / 2;
+      const middleRing = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.07, 16), targetWhiteMat);
+      middleRing.rotation.x = Math.PI / 2;
+      const bullseye = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.08, 16), targetBullseyeMat);
+      bullseye.rotation.x = Math.PI / 2;
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.35, 6), duckOrangeMat);
+      stem.position.set(0, -0.5, 0);
+
+      targetGroup.add(outerRing, middleRing, bullseye, stem);
+      const startX = -4.5 + i * 3.0;
+      targetGroup.position.set(startX, 3.2, -8.5);
+      this.scene.add(targetGroup);
+
+      this.carnivalTargets.push({
+        group: targetGroup,
+        type: 'bullseye',
+        shelfIndex: 1,
+        x: startX,
+        baseY: 3.2,
+        z: -8.5,
+        speed: 0.035,
+        dir: i % 2 === 0 ? 1 : -1,
+        points: 35,
+        hit: false,
+        hitTimer: 0
+      });
+    }
+
+    // 3. Prateleira Superior: Estrelas douradas bônus e Bombinha de penalidade
+    for (let i = 0; i < 3; i++) {
+      const topGroup = new THREE.Group();
+      const isBomb = i === 1;
+
+      if (isBomb) {
+        const bombBody = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 12), bombMat);
+        const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.15, 6), targetBullseyeMat);
+        fuse.position.set(0, 0.36, 0);
+        const skull = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.1), targetWhiteMat);
+        skull.position.set(0, 0, 0.3);
+        topGroup.add(bombBody, fuse, skull);
+      } else {
+        const star = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35, 0), starGoldMat);
+        topGroup.add(star);
+      }
+
+      const startX = -3.5 + i * 3.5;
+      topGroup.position.set(startX, 4.6, -8.5);
+      this.scene.add(topGroup);
+
+      this.carnivalTargets.push({
+        group: topGroup,
+        type: isBomb ? 'bomb' : 'star',
+        shelfIndex: 2,
+        x: startX,
+        baseY: 4.6,
+        z: -8.5,
+        speed: 0.05,
+        dir: i === 0 ? 1 : -1,
+        points: isBomb ? -30 : 60,
+        hit: false,
+        hitTimer: 0
+      });
+    }
+  }
+
+  private updateCarnivalShooting() {
+    for (const tgt of this.carnivalTargets) {
+      if (!tgt.hit) {
+        tgt.x += tgt.speed * tgt.dir;
+        if (tgt.x > 5.5) {
+          tgt.x = 5.5;
+          tgt.dir = -1;
+        } else if (tgt.x < -5.5) {
+          tgt.x = -5.5;
+          tgt.dir = 1;
+        }
+        tgt.group.position.x = tgt.x;
+
+        // Leve oscilação de movimento
+        if (tgt.type === 'duck') {
+          tgt.group.position.y = tgt.baseY + Math.sin(Date.now() * 0.005 + tgt.x) * 0.04;
+        } else if (tgt.type === 'bullseye') {
+          tgt.group.rotation.z += 0.02;
+        } else if (tgt.type === 'star') {
+          tgt.group.rotation.y += 0.04;
+        }
+      } else {
+        // Alvo abatido tomba para trás e depois sobe novamente
+        tgt.hitTimer--;
+        tgt.group.rotation.x = THREE.MathUtils.lerp(tgt.group.rotation.x, Math.PI / 2, 0.2);
+        if (tgt.hitTimer <= 0) {
+          tgt.hit = false;
+          tgt.group.rotation.x = 0;
+        }
+      }
+    }
+  }
+
+  private shootCarnivalToyGun() {
+    if (this.currentScene !== 'SHOOTING_GALLERY') return;
+
+    this.initAudio();
+    this.playToyGunPopSound();
+    this.shootingShots++;
+
+    // Animação de recuo da arminha de brinquedo
+    if (this.toyGunGroup) {
+      this.toyGunGroup.position.z = -0.52;
+      this.toyGunGroup.rotation.x = 0.25;
+      setTimeout(() => {
+        if (this.toyGunGroup) {
+          this.toyGunGroup.position.z = -0.65;
+          this.toyGunGroup.rotation.x = 0.05;
+        }
+      }, 120);
+    }
+
+    // Raycaster a partir da mira central da câmera
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+
+    let hitSomething = false;
+    for (const tgt of this.carnivalTargets) {
+      if (tgt.hit) continue;
+
+      const intersects = raycaster.intersectObjects(tgt.group.children, true);
+      if (intersects.length > 0) {
+        hitSomething = true;
+        tgt.hit = true;
+        tgt.hitTimer = 65; // Tomba por 65 frames
+        this.playTargetHitSound();
+        this.shootingHits++;
+        this.shootingCombo++;
+
+        // Emissão de faíscas festivas
+        this.emitSnowSpray(15, 0, tgt.x, tgt.baseY, tgt.z);
+
+        if (tgt.type === 'bomb') {
+          this.shootingScore = Math.max(0, this.shootingScore - 30);
+          this.shootingCombo = 0;
+          this.showToast('💣 BUUM! Você acertou a bomba de brinquedo (-30 pts)!', 'warning');
+        } else {
+          const mult = Math.min(4, 1 + Math.floor(this.shootingCombo / 3));
+          const earned = tgt.points * mult;
+          this.shootingScore += earned;
+          const msg = mult > 1 ? `🎯 +${earned} pts! (COMBO x${mult})` : `🎯 +${earned} pts!`;
+          this.showToast(msg, 'success');
+        }
+        break;
+      }
+    }
+
+    if (!hitSomething) {
+      this.shootingCombo = 0;
+    }
+
+    this.updateShootingHUD();
+  }
+
+  private updateShootingHUD() {
+    const scoreEl = document.getElementById('shooting-score-val');
+    if (scoreEl) scoreEl.textContent = this.shootingScore.toString();
+    const hitsEl = document.getElementById('shooting-hits-val');
+    if (hitsEl) hitsEl.textContent = this.shootingHits.toString();
+
+    const comboBadge = document.getElementById('shooting-combo-badge');
+    const comboVal = document.getElementById('shooting-combo-val');
+    if (comboBadge && comboVal) {
+      if (this.shootingCombo >= 2) {
+        comboBadge.style.display = 'inline-block';
+        comboVal.textContent = this.shootingCombo.toString();
+      } else {
+        comboBadge.style.display = 'none';
+      }
+    }
+  }
+
+  private endShootingGallery() {
+    if (this.shootingTimer) clearInterval(this.shootingTimer);
+    this.playVictoryFanfare();
+
+    const acc = this.shootingShots > 0 ? Math.round((this.shootingHits / this.shootingShots) * 100) : 0;
+    const coins = Math.max(40, Math.floor(this.shootingScore * 0.35));
+    this.currency += coins;
+    this.updateCoinsDisplay();
+
+    const fScore = document.getElementById('shooting-final-score');
+    if (fScore) fScore.textContent = this.shootingScore.toString();
+    const fHits = document.getElementById('shooting-final-hits');
+    if (fHits) fHits.textContent = this.shootingHits.toString();
+    const fAcc = document.getElementById('shooting-final-accuracy');
+    if (fAcc) fAcc.textContent = `${acc}%`;
+    const fCoins = document.getElementById('shooting-final-coins');
+    if (fCoins) fCoins.textContent = `+${coins}`;
+
+    const modal = document.getElementById('shooting-results-modal');
+    if (modal) {
+      if (document.pointerLockElement) {
+        try { document.exitPointerLock(); } catch (e) {}
+      }
+      modal.style.display = 'flex';
+    }
+  }
+
+  // =========================================================================
+  // MINIGAME 2: ARENA DE GUERRA DE NEVE (FORTES, TRINCHEIRAS & LABIRINTO)
+  // =========================================================================
+  private loadSnowballWarScene() {
+    this.currentScene = 'SNOWBALL_WAR';
+    this.scene.clear();
+    this.isSitting = false;
+    this.snowballs = [];
+    this.warBots = [];
+    this.warObstacles = [];
+    this.warPlayerHealth = 3;
+    this.warKOs = 0;
+    this.warHits = 0;
+    this.warScore = 0;
+    this.warTimeLeft = 60;
+    this.isPlayerWarInvuln = false;
+    this.playerWarInvulnTimer = 0;
+
+    // Atmosfera noturna gélida com nevasca
+    this.scene.background = new THREE.Color(0x0f172a);
+    this.scene.fog = new THREE.FogExp2(0x0f172a, 0.007);
+
+    const ambient = new THREE.AmbientLight(0x94a3b8, 0.7);
+    this.scene.add(ambient);
+
+    const moon = new THREE.DirectionalLight(0x38bdf8, 1.2);
+    moon.position.set(30, 60, -30);
+    moon.castShadow = true;
+    this.scene.add(moon);
+
+    this.createSnowParticles();
+    this.createSnowSpraySystem();
+
+    // Constrói o labirinto de trincheiras e fortes de neve
+    this.buildSnowballWarArena();
+
+    // Spawna jogador no bunker base 1
+    this.playerPosX = -20;
+    this.playerPosZ = -20;
+    this.playerPosY = 0;
+    this.playerVelX = 0;
+    this.playerVelZ = 0;
+    this.respawnPlayerMesh();
+    this.playerGroup.position.set(this.playerPosX, 0, this.playerPosZ);
+
+    // Spawna os 3 bots adversários nas outras bases
+    this.spawnWarBots();
+
+    // Configura câmera em terceira pessoa
+    this.cameraDistance = 4.5;
+    this.cameraAngleY = Math.PI * 0.25;
+    this.cameraAngleX = 0.25;
+
+    // Atualiza HUD da Guerra
+    document.getElementById('hub-ui')!.style.display = 'none';
+    document.getElementById('racing-hud')!.style.display = 'none';
+    document.getElementById('shooting-hud')!.style.display = 'none';
+    document.getElementById('snowball-war-hud')!.style.display = 'block';
+    document.getElementById('back-hub-btn')!.style.display = 'none';
+    document.getElementById('joystick-ui')!.style.display = 'block';
+    document.getElementById('run-btn')!.style.display = 'flex';
+    document.getElementById('hub-crosshair')!.style.display = 'block';
+    this.hideAllInteractivePrompts();
+
+    this.updateWarHUDHearts();
+    const kosEl = document.getElementById('war-kos-val');
+    if (kosEl) kosEl.textContent = '0';
+    const scoreEl = document.getElementById('war-score-val');
+    if (scoreEl) scoreEl.textContent = '0';
+    const timeEl = document.getElementById('war-time-val');
+    if (timeEl) timeEl.textContent = '60s';
+
+    this.playVictoryFanfare();
+    this.showToast('❄️ A GUERRA DE NEVE COMEÇOU! Acabe com os rivais!', 'info');
+
+    // Cronômetro da Batalha (60 segundos)
+    if (this.warTimer) clearInterval(this.warTimer);
+    this.warTimer = setInterval(() => {
+      this.warTimeLeft--;
+      const tEl = document.getElementById('war-time-val');
+      if (tEl) tEl.textContent = `${this.warTimeLeft}s`;
+      if (this.warTimeLeft <= 0) {
+        clearInterval(this.warTimer);
+        this.endSnowballWar();
+      }
+    }, 1000);
+  }
+
+  private buildSnowballWarArena() {
+    const arenaSize = 58;
+    const snowGroundGeo = new THREE.PlaneGeometry(arenaSize, arenaSize, 32, 32);
+    const snowGroundMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.95 });
+    const ground = new THREE.Mesh(snowGroundGeo, snowGroundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+
+    const snowWallMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 });
+    const iceBlockMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2, transparent: true, opacity: 0.8 });
+    const woodFenceMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.85 });
+
+    // Paliçada perimetral alta da arena
+    const hWall = 4.2;
+    const half = arenaSize * 0.5;
+    const perimWalls = [
+      { x: 0, z: -half, hw: half, hd: 0.8 },
+      { x: 0, z: half, hw: half, hd: 0.8 },
+      { x: -half, z: 0, hw: 0.8, hd: half },
+      { x: half, z: 0, hw: 0.8, hd: half }
+    ];
+    for (const pw of perimWalls) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(pw.hw * 2, hWall, pw.hd * 2), woodFenceMat);
+      mesh.position.set(pw.x, hWall * 0.5, pw.z);
+      mesh.castShadow = true;
+      this.scene.add(mesh);
+      this.warObstacles.push({ x: pw.x, z: pw.z, hw: pw.hw, hd: pw.hd, height: hWall });
+    }
+
+    // 4 Bunkers de Neve nos Cantos (Bases dos Competidores)
+    const corners = [
+      { x: -20, z: -20 },
+      { x: 20, z: -20 },
+      { x: -20, z: 20 },
+      { x: 20, z: 20 }
+    ];
+    for (const c of corners) {
+      // Pequeno forte quadrado com entrada
+      const bWallH = 2.2;
+      const b1 = new THREE.Mesh(new THREE.BoxGeometry(6, bWallH, 0.8), snowWallMat);
+      b1.position.set(c.x, bWallH * 0.5, c.z - 3);
+      const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.8, bWallH, 6), snowWallMat);
+      b2.position.set(c.x - 3, bWallH * 0.5, c.z);
+      this.scene.add(b1, b2);
+
+      this.warObstacles.push({ x: c.x, z: c.z - 3, hw: 3.0, hd: 0.5, height: bWallH });
+      this.warObstacles.push({ x: c.x - 3, z: c.z, hw: 0.5, hd: 3.0, height: bWallH });
+    }
+
+    // Labirinto tático central com muretas de cobertura (altura peito: 1.4m) e blocos altos (3.0m)
+    const mazeWalls: { x: number; z: number; w: number; d: number; h: number; isIce?: boolean }[] = [
+      // Muretas centrais em cruz protegendo o miolo
+      { x: 0, z: -8, w: 10, d: 1.0, h: 1.4 },
+      { x: 0, z: 8, w: 10, d: 1.0, h: 1.4 },
+      { x: -8, z: 0, w: 1.0, d: 10, h: 1.4 },
+      { x: 8, z: 0, w: 1.0, d: 10, h: 1.4 },
+
+      // Bunkers intermediários
+      { x: -12, z: -12, w: 6, d: 1.0, h: 2.8 },
+      { x: 12, z: -12, w: 6, d: 1.0, h: 2.8 },
+      { x: -12, z: 12, w: 6, d: 1.0, h: 2.8 },
+      { x: 12, z: 12, w: 6, d: 1.0, h: 2.8 },
+
+      // Pilares de gelo translúcido para ricochete
+      { x: -4, z: -4, w: 1.8, d: 1.8, h: 3.6, isIce: true },
+      { x: 4, z: -4, w: 1.8, d: 1.8, h: 3.6, isIce: true },
+      { x: -4, z: 4, w: 1.8, d: 1.8, h: 3.6, isIce: true },
+      { x: 4, z: 4, w: 1.8, d: 1.8, h: 3.6, isIce: true },
+
+      // Trincheiras em L
+      { x: -16, z: 0, w: 1.0, d: 8, h: 1.4 },
+      { x: 16, z: 0, w: 1.0, d: 8, h: 1.4 },
+      { x: 0, z: -16, w: 8, d: 1.0, h: 1.4 },
+      { x: 0, z: 16, w: 8, d: 1.0, h: 1.4 }
+    ];
+
+    for (const mw of mazeWalls) {
+      const mat = mw.isIce ? iceBlockMat : snowWallMat;
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(mw.w, mw.h, mw.d), mat);
+      mesh.position.set(mw.x, mw.h * 0.5, mw.z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+
+      this.warObstacles.push({
+        x: mw.x,
+        z: mw.z,
+        hw: mw.w * 0.5,
+        hd: mw.d * 0.5,
+        height: mw.h
+      });
+    }
+
+    // Monumento de gelo decorativo central
+    const centerIce = new THREE.Mesh(new THREE.ConeGeometry(1.6, 4.5, 6), iceBlockMat);
+    centerIce.position.set(0, 2.25, 0);
+    this.scene.add(centerIce);
+    this.warObstacles.push({ x: 0, z: 0, hw: 1.4, hd: 1.4, height: 4.5 });
+  }
+
+  private resolveWarCollisions(px: number, pz: number, playerRadius = 0.65): { x: number; z: number } {
+    let resX = Math.max(-27 + playerRadius, Math.min(27 - playerRadius, px));
+    let resZ = Math.max(-27 + playerRadius, Math.min(27 - playerRadius, pz));
+
+    for (let pass = 0; pass < 2; pass++) {
+      for (const obs of this.warObstacles) {
+        const minX = obs.x - obs.hw - playerRadius;
+        const maxX = obs.x + obs.hw + playerRadius;
+        const minZ = obs.z - obs.hd - playerRadius;
+        const maxZ = obs.z + obs.hd + playerRadius;
+
+        if (resX > minX && resX < maxX && resZ > minZ && resZ < maxZ) {
+          const dLeft = resX - minX;
+          const dRight = maxX - resX;
+          const dTop = resZ - minZ;
+          const dBottom = maxZ - resZ;
+          const minD = Math.min(dLeft, dRight, dTop, dBottom);
+
+          if (minD === dLeft) resX = minX;
+          else if (minD === dRight) resX = maxX;
+          else if (minD === dTop) resZ = minZ;
+          else resZ = maxZ;
+        }
+      }
+    }
+    return { x: resX, z: resZ };
+  }
+
+  private spawnWarBots() {
+    this.warBots = [];
+    const botConfigs: { name: string; type: CharacterId; start: { x: number; z: number } }[] = [
+      { name: 'Kero Saltador', type: 'frog', start: { x: 20, z: -20 } },
+      { name: 'Mimi Ártica', type: 'cat', start: { x: -20, z: 20 } },
+      { name: 'Toby Neve', type: 'dog', start: { x: 20, z: 20 } }
+    ];
+
+    for (let i = 0; i < botConfigs.length; i++) {
+      const cfg = botConfigs[i];
+      let model: THREE.Group;
+      if (cfg.type === 'frog') model = this.createDetailedFrog();
+      else if (cfg.type === 'cat') model = this.createDetailedCat();
+      else if (cfg.type === 'dog') model = this.createDetailedDog();
+      else model = this.createDetailedPenguin();
+
+      model.position.set(cfg.start.x, 0, cfg.start.z);
+      this.scene.add(model);
+
+      this.warBots.push({
+        id: `bot_${i}`,
+        name: cfg.name,
+        type: cfg.type,
+        group: model,
+        torso: model.children[0] as THREE.Group,
+        head: (model.children[0] as THREE.Group).children[2] as THREE.Group,
+        armL: (model.children[0] as THREE.Group).children[3] as THREE.Mesh,
+        armR: (model.children[0] as THREE.Group).children[4] as THREE.Mesh,
+        footL: model.children[1] as THREE.Mesh,
+        footR: model.children[2] as THREE.Mesh,
+        tail: null,
+        pos: new THREE.Vector3(cfg.start.x, 0, cfg.start.z),
+        rotY: 0,
+        health: 3,
+        maxHealth: 3,
+        state: 'patrol',
+        stateTimer: Math.floor(Math.random() * 60),
+        targetPos: new THREE.Vector3(0, 0, 0),
+        invulnTimer: 0,
+        iceCube: null,
+        walkTime: Math.random() * 10
+      });
+    }
+  }
+
+  private updateSnowballWar() {
+    if (this.currentScene !== 'SNOWBALL_WAR') return;
+
+    // Atualiza invulnerabilidade do jogador
+    if (this.isPlayerWarInvuln) {
+      this.playerWarInvulnTimer--;
+      if (this.playerGroup) {
+        this.playerGroup.visible = Math.floor(this.playerWarInvulnTimer / 6) % 2 === 0;
+      }
+      if (this.playerWarInvulnTimer <= 0) {
+        this.isPlayerWarInvuln = false;
+        if (this.playerGroup) this.playerGroup.visible = true;
+      }
+    }
+
+    // Atualiza IA de combate dos bots
+    for (const bot of this.warBots) {
+      if (bot.state === 'frozen') {
+        bot.stateTimer--;
+        if (bot.stateTimer <= 0) {
+          // Descongela e renasce
+          if (bot.iceCube) {
+            this.scene.remove(bot.iceCube);
+            bot.iceCube = null;
+          }
+          bot.health = 3;
+          bot.state = 'patrol';
+          bot.stateTimer = 60;
+          this.emitSnowSpray(20, 0, bot.pos.x, 1.0, bot.pos.z);
+        }
+        continue;
+      }
+
+      // Distância do bot até o jogador
+      const toPlayerX = this.playerPosX - bot.pos.x;
+      const toPlayerZ = this.playerPosZ - bot.pos.z;
+      const distToPlayer = Math.sqrt(toPlayerX * toPlayerX + toPlayerZ * toPlayerZ);
+
+      bot.stateTimer--;
+
+      // Comportamento: mirar e jogar bola de neve se estiver no alcance
+      if (distToPlayer < 24 && distToPlayer > 3.5) {
+        bot.rotY = Math.atan2(toPlayerX, toPlayerZ);
+        bot.group.rotation.y = bot.rotY;
+
+        if (bot.stateTimer <= 0) {
+          this.throwBotSnowball(bot);
+          bot.stateTimer = 90 + Math.floor(Math.random() * 60); // Joga a cada 1.5s a 2.5s
+        }
+      } else {
+        // Patrulhar pelo labirinto
+        if (bot.stateTimer <= 0) {
+          // Escolhe novo destino aleatório próximo
+          bot.targetPos.set(
+            (Math.random() - 0.5) * 36,
+            0,
+            (Math.random() - 0.5) * 36
+          );
+          bot.stateTimer = 120 + Math.floor(Math.random() * 80);
+        }
+
+        const dx = bot.targetPos.x - bot.pos.x;
+        const dz = bot.targetPos.z - bot.pos.z;
+        const dTarget = Math.sqrt(dx * dx + dz * dz);
+        if (dTarget > 0.8) {
+          bot.rotY = Math.atan2(dx, dz);
+          bot.group.rotation.y = bot.rotY;
+          const spd = 0.05;
+          bot.pos.x += (dx / dTarget) * spd;
+          bot.pos.z += (dz / dTarget) * spd;
+
+          // Animação de caminhada
+          bot.walkTime += 0.12;
+          if (bot.footL && bot.footR) {
+            bot.footL.position.z = Math.sin(bot.walkTime) * 0.18;
+            bot.footR.position.z = -Math.sin(bot.walkTime) * 0.18;
+          }
+        }
+      }
+
+      bot.group.position.copy(bot.pos);
+    }
+  }
+
+  private throwBotSnowball(bot: WarBot) {
+    const toPlayerX = this.playerPosX - bot.pos.x;
+    const toPlayerZ = this.playerPosZ - bot.pos.z;
+    const dist = Math.sqrt(toPlayerX * toPlayerX + toPlayerZ * toPlayerZ);
+    if (dist < 0.1) return;
+
+    const speed = 0.52;
+    const vx = (toPlayerX / dist) * speed;
+    const vz = (toPlayerZ / dist) * speed;
+    const vy = 0.16 + (dist / 24) * 0.10;
+
+    const snowballGeo = new THREE.SphereGeometry(0.20, 8, 8);
+    const snowballMat = new THREE.MeshStandardMaterial({ color: 0x93c5fd, roughness: 0.7 });
+    const mesh = new THREE.Mesh(snowballGeo, snowballMat);
+    mesh.position.set(bot.pos.x, 1.2, bot.pos.z);
+    mesh.castShadow = true;
+    this.scene.add(mesh);
+
+    this.snowballs.push({ mesh, vx, vy, vz, life: 0, isEnemy: true });
+    this.playSnowThrowSound(0.5);
+  }
+
+  private endSnowballWar() {
+    if (this.warTimer) clearInterval(this.warTimer);
+    this.playVictoryFanfare();
+
+    let rankStr = '🥉 3º Lugar';
+    if (this.warKOs >= 4) rankStr = '🥇 1º Lugar';
+    else if (this.warKOs >= 2) rankStr = '🥈 2º Lugar';
+
+    const coins = 120 + this.warKOs * 50;
+    this.currency += coins;
+    this.updateCoinsDisplay();
+
+    const kosEl = document.getElementById('war-final-kos');
+    if (kosEl) kosEl.textContent = this.warKOs.toString();
+    const hitsEl = document.getElementById('war-final-hits');
+    if (hitsEl) hitsEl.textContent = this.warHits.toString();
+    const rankEl = document.getElementById('war-final-rank');
+    if (rankEl) rankEl.textContent = rankStr;
+    const coinsEl = document.getElementById('war-final-coins');
+    if (coinsEl) coinsEl.textContent = `+${coins}`;
+
+    const modal = document.getElementById('snowball-war-results-modal');
+    if (modal) {
+      if (document.pointerLockElement) {
+        try { document.exitPointerLock(); } catch (e) {}
+      }
+      modal.style.display = 'flex';
+    }
+  }
+
+  // =========================================================================
   // GESTÃO DE MODAIS, LOJA E EQUIPAMENTOS
   // =========================================================================
   private updateCoinsDisplay() {
@@ -3074,7 +4476,9 @@ class SnowSlideTPSMasterEngine {
       'settings-modal',
       'character-modal',
       'records-modal',
-      'race-finish-modal'
+      'race-finish-modal',
+      'shooting-results-modal',
+      'snowball-war-results-modal'
     ];
     for (const m of modals) {
       const el = document.getElementById(m);
@@ -3090,7 +4494,9 @@ class SnowSlideTPSMasterEngine {
       'settings-modal',
       'character-modal',
       'records-modal',
-      'race-finish-modal'
+      'race-finish-modal',
+      'shooting-results-modal',
+      'snowball-war-results-modal'
     ];
     for (const m of modals) {
       const el = document.getElementById(m);
@@ -3284,6 +4690,30 @@ class SnowSlideTPSMasterEngine {
       this.loadHubScene();
     });
 
+    document.getElementById('exit-shooting-btn')?.addEventListener('click', () => {
+      this.loadHubScene();
+    });
+
+    document.getElementById('retry-shooting-btn')?.addEventListener('click', () => {
+      this.loadShootingGalleryScene();
+    });
+
+    document.getElementById('shooting-to-hub-btn')?.addEventListener('click', () => {
+      this.loadHubScene();
+    });
+
+    document.getElementById('exit-war-btn')?.addEventListener('click', () => {
+      this.loadHubScene();
+    });
+
+    document.getElementById('retry-war-btn')?.addEventListener('click', () => {
+      this.loadSnowballWarScene();
+    });
+
+    document.getElementById('war-to-hub-btn')?.addEventListener('click', () => {
+      this.loadHubScene();
+    });
+
     const sensSlider = document.getElementById('mouse-sens-slider') as HTMLInputElement;
     if (sensSlider) {
       sensSlider.addEventListener('input', (e) => {
@@ -3367,6 +4797,8 @@ class SnowSlideTPSMasterEngine {
     document.getElementById('phone-booth-prompt')?.addEventListener('click', () => this.openCharacterModal());
     document.getElementById('sit-bench-prompt')?.addEventListener('click', () => this.sitOnNearestBench());
     document.getElementById('stand-up-prompt')?.addEventListener('click', () => this.standUpFromBench());
+    document.getElementById('carnival-prompt')?.addEventListener('click', () => this.loadShootingGalleryScene());
+    document.getElementById('snowball-war-prompt')?.addEventListener('click', () => this.loadSnowballWarScene());
 
     // Analógico Virtual
     const joystickBase = document.getElementById('joystick-base')!;
@@ -3410,18 +4842,14 @@ class SnowSlideTPSMasterEngine {
     joystickBase.addEventListener('pointerup', endJoystick);
     joystickBase.addEventListener('pointercancel', endJoystick);
 
-    // Bloqueio do Ponteiro do Mouse & Arremesso de Bola de Neve (Botão Esquerdo)
-    this.renderer.domElement.addEventListener('click', (e) => {
+    // Bloqueio do Ponteiro do Mouse
+    this.renderer.domElement.addEventListener('click', () => {
       this.initAudio();
-      if (this.currentScene === 'HUB' && !this.isAnyModalOpen()) {
+      if ((this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR' || this.currentScene === 'SHOOTING_GALLERY') && !this.isAnyModalOpen()) {
         if (!this.isPointerLocked) {
           try {
             this.renderer.domElement.requestPointerLock();
           } catch (err) {}
-        }
-        // Ao clicar com o botão esquerdo, joga bola de neve!
-        if (e.button === 0) {
-          this.throwSnowball();
         }
       }
     });
@@ -3430,31 +4858,44 @@ class SnowSlideTPSMasterEngine {
       this.isPointerLocked = document.pointerLockElement === this.renderer.domElement;
       const crosshair = document.getElementById('hub-crosshair');
       if (crosshair) {
-        crosshair.style.display = (this.isPointerLocked && this.currentScene === 'HUB') ? 'block' : 'none';
+        crosshair.style.display = (this.isPointerLocked && (this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR' || this.currentScene === 'SHOOTING_GALLERY')) ? 'block' : 'none';
       }
     });
 
-    // Rotação da Câmera com Mouse
+    // Rotação da Câmera com Mouse (Com suporte a ADS e multiplicador de mira)
     window.addEventListener('mousemove', (e) => {
-      if (this.currentScene !== 'HUB') return;
+      if (this.currentScene !== 'HUB' && this.currentScene !== 'SNOWBALL_WAR' && this.currentScene !== 'SHOOTING_GALLERY') return;
       if (this.isAnyModalOpen()) return;
 
-      if (this.isPointerLocked || this.isRightMouseDown) {
+      if (this.isPointerLocked || this.isRightMouseDown || this.currentScene === 'SHOOTING_GALLERY') {
         const baseSens = 0.0024;
-        const effectiveSens = baseSens * this.mouseSensMultiplier;
+        let effectiveSens = baseSens * this.mouseSensMultiplier;
+        if (this.isAimingDownSights) effectiveSens *= 0.55;
         const invertFactor = this.invertY ? -1 : 1;
 
         this.cameraAngleY -= e.movementX * effectiveSens;
-        this.cameraAngleX = Math.max(-0.35, Math.min(1.15, this.cameraAngleX + e.movementY * effectiveSens * invertFactor));
+        this.cameraAngleX = Math.max(-0.65, Math.min(1.15, this.cameraAngleX + e.movementY * effectiveSens * invertFactor));
       }
     });
 
+    // Arremesso Carregado (LMB) & Mira Tática / ADS (RMB)
     window.addEventListener('mousedown', (e) => {
-      if (this.currentScene === 'HUB') {
+      if (this.isAnyModalOpen()) return;
+
+      if (this.currentScene === 'SHOOTING_GALLERY') {
+        if (e.button === 0) {
+          this.shootCarnivalToyGun();
+        }
+        return;
+      }
+
+      if (this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR') {
         if (e.button === 2) {
           this.isRightMouseDown = true;
-        } else if (e.button === 0 && this.isPointerLocked && !this.isAnyModalOpen()) {
-          this.throwSnowball();
+          this.isAimingDownSights = true;
+        } else if (e.button === 0 && this.isPointerLocked) {
+          this.isChargingSnowball = true;
+          this.snowballChargeStartTime = performance.now();
         }
       }
     });
@@ -3462,17 +4903,27 @@ class SnowSlideTPSMasterEngine {
     window.addEventListener('mouseup', (e) => {
       if (e.button === 2) {
         this.isRightMouseDown = false;
+        this.isAimingDownSights = false;
+      } else if (e.button === 0) {
+        if (this.isChargingSnowball) {
+          this.isChargingSnowball = false;
+          const chargeDuration = performance.now() - this.snowballChargeStartTime;
+          const chargeRatio = Math.min(1.0, Math.max(0.15, chargeDuration / 850));
+          this.throwSnowball(chargeRatio);
+          const chargeContainer = document.getElementById('snowball-charge-container');
+          if (chargeContainer) chargeContainer.style.display = 'none';
+        }
       }
     });
 
     window.addEventListener('contextmenu', (e) => {
-      if (this.currentScene === 'HUB') {
+      if (this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR' || this.currentScene === 'SHOOTING_GALLERY') {
         e.preventDefault();
       }
     });
 
     window.addEventListener('wheel', (e) => {
-      if (this.currentScene !== 'HUB') return;
+      if (this.currentScene !== 'HUB' && this.currentScene !== 'SNOWBALL_WAR') return;
       this.cameraDistance = Math.max(3.2, Math.min(13.0, this.cameraDistance + e.deltaY * 0.006));
     }, { passive: true });
 
@@ -3524,8 +4975,14 @@ class SnowSlideTPSMasterEngine {
       }
 
       if (e.key === 'Escape') {
-        this.closeAllModals();
-        return;
+        if (this.isAnyModalOpen()) {
+          this.closeAllModals();
+          return;
+        }
+        if (this.currentScene === 'SHOOTING_GALLERY' || this.currentScene === 'SNOWBALL_WAR') {
+          this.loadHubScene();
+          return;
+        }
       }
 
       if (this.isAnyModalOpen()) return;
@@ -3562,6 +5019,10 @@ class SnowSlideTPSMasterEngine {
           this.openCharacterModal();
         } else if (this.nearCableCar) {
           this.startCableCarClimb();
+        } else if (this.nearCarnivalBooth) {
+          this.loadShootingGalleryScene();
+        } else if (this.nearSnowballWarPortal) {
+          this.loadSnowballWarScene();
         }
       }
     });
@@ -3610,6 +5071,30 @@ class SnowSlideTPSMasterEngine {
   // =========================================================================
   private loop = () => {
     requestAnimationFrame(this.loop);
+
+    // Interpolação suave do FOV para mira tática (ADS)
+    const targetFov = (this.currentScene === 'HUB' || this.currentScene === 'SNOWBALL_WAR') && this.isAimingDownSights ? 46 : 75;
+    this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, 0.16);
+    this.camera.updateProjectionMatrix();
+
+    // Atualiza classe do retículo para mira tática
+    const crosshairEl = document.getElementById('hub-crosshair');
+    if (crosshairEl) {
+      crosshairEl.classList.toggle('aiming', this.isAimingDownSights);
+    }
+
+    // Atualiza barra de carga da força de arremesso
+    if (this.isChargingSnowball) {
+      const duration = performance.now() - this.snowballChargeStartTime;
+      const ratio = Math.min(1.0, Math.max(0.15, duration / 850));
+      const pct = Math.round(ratio * 100);
+      const container = document.getElementById('snowball-charge-container');
+      const fill = document.getElementById('snowball-charge-fill');
+      const txt = document.getElementById('snowball-charge-text');
+      if (container) container.style.display = 'block';
+      if (fill) fill.style.width = `${pct}%`;
+      if (txt) txt.innerText = `FORÇA: ${pct}%`;
+    }
 
     let inputForward = 0;
     let inputLateral = 0;
@@ -3760,6 +5245,22 @@ class SnowSlideTPSMasterEngine {
         phonePrompt.style.display = (this.nearPhoneBooth && !this.isSitting) ? 'block' : 'none';
       }
 
+      // Verificação de Proximidade: Estande de Tiro Festivo
+      const distCarnival = this.carnivalBoothPos.distanceTo(new THREE.Vector3(this.playerPosX, 0, this.playerPosZ));
+      const carnivalPrompt = document.getElementById('carnival-prompt');
+      if (carnivalPrompt) {
+        this.nearCarnivalBooth = distCarnival < 5.5;
+        carnivalPrompt.style.display = (this.nearCarnivalBooth && !this.isSitting) ? 'block' : 'none';
+      }
+
+      // Verificação de Proximidade: Arena de Guerra de Neve
+      const distWar = this.snowballWarPortalPos.distanceTo(new THREE.Vector3(this.playerPosX, 0, this.playerPosZ));
+      const warPrompt = document.getElementById('snowball-war-prompt');
+      if (warPrompt) {
+        this.nearSnowballWarPortal = distWar < 5.5;
+        warPrompt.style.display = (this.nearSnowballWarPortal && !this.isSitting) ? 'block' : 'none';
+      }
+
       // Animação dos NPCs Lojistas
       const now = Date.now();
       if (this.npcRalph) this.npcRalph.rotation.y = Math.sin(now * 0.002) * 0.15;
@@ -3789,21 +5290,129 @@ class SnowSlideTPSMasterEngine {
         this.bonfireEmbers.geometry.getAttribute('position').needsUpdate = true;
       }
 
-      // Câmera terceira pessoa
+      // Câmera terceira pessoa (com ADS sobre o ombro)
       const targetLookY = this.playerPosY + 1.25;
       const cosPitch = Math.cos(this.cameraAngleX);
       const sinPitch = Math.sin(this.cameraAngleX);
 
-      const shoulderOffset = 0.45;
+      const shoulderOffset = this.isAimingDownSights ? 0.72 : 0.45;
       const rightCamX = Math.cos(this.cameraAngleY) * shoulderOffset;
       const rightCamZ = -Math.sin(this.cameraAngleY) * shoulderOffset;
 
-      const camX = this.playerPosX + rightCamX + Math.sin(this.cameraAngleY) * (this.cameraDistance * cosPitch);
-      const camZ = this.playerPosZ + rightCamZ + Math.cos(this.cameraAngleY) * (this.cameraDistance * cosPitch);
-      const camY = Math.max(this.playerPosY + 0.5, this.playerPosY + 1.4 + (this.cameraDistance * sinPitch));
+      const currentDist = this.isAimingDownSights ? Math.max(2.4, this.cameraDistance * 0.62) : this.cameraDistance;
+      const camX = this.playerPosX + rightCamX + Math.sin(this.cameraAngleY) * (currentDist * cosPitch);
+      const camZ = this.playerPosZ + rightCamZ + Math.cos(this.cameraAngleY) * (currentDist * cosPitch);
+      const camY = Math.max(this.playerPosY + 0.5, this.playerPosY + (this.isAimingDownSights ? 1.55 : 1.4) + (currentDist * sinPitch));
 
       this.camera.position.set(camX, camY, camZ);
-      this.camera.lookAt(this.playerPosX + rightCamX * 0.5, targetLookY, this.playerPosZ + rightCamZ * 0.5);
+      this.camera.lookAt(
+        this.playerPosX + rightCamX * (this.isAimingDownSights ? 0.8 : 0.5),
+        targetLookY,
+        this.playerPosZ + rightCamZ * (this.isAimingDownSights ? 0.8 : 0.5)
+      );
+
+    } else if (this.currentScene === 'SNOWBALL_WAR') {
+      // Atualização dos bots e das bolas de neve na arena
+      this.updateSnowballWar();
+      this.updateSnowballs();
+
+      const running = this.keyShift || this.isRunning;
+      const moveSpeed = running ? 0.28 : 0.16;
+
+      const cosYaw = Math.cos(this.cameraAngleY);
+      const sinYaw = Math.sin(this.cameraAngleY);
+
+      const fwdX = -sinYaw;
+      const fwdZ = -cosYaw;
+      const rightX = cosYaw;
+      const rightZ = -sinYaw;
+
+      let moveWorldX = (fwdX * inputForward) + (rightX * inputLateral);
+      let moveWorldZ = (fwdZ * inputForward) + (rightZ * inputLateral);
+
+      const moveMag = Math.sqrt(moveWorldX * moveWorldX + moveWorldZ * moveWorldZ);
+      const isMoving = moveMag > 0.05;
+
+      if (isMoving) {
+        moveWorldX = (moveWorldX / moveMag) * moveSpeed;
+        moveWorldZ = (moveWorldZ / moveMag) * moveSpeed;
+
+        const desiredX = this.playerPosX + moveWorldX;
+        const desiredZ = this.playerPosZ + moveWorldZ;
+
+        const resolved = this.resolveWarCollisions(desiredX, desiredZ, 0.65);
+        this.playerPosX = resolved.x;
+        this.playerPosZ = resolved.z;
+
+        const targetRotY = Math.atan2(moveWorldX, moveWorldZ);
+        let diffRot = targetRotY - this.playerGroup.rotation.y;
+        while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+        while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+        this.playerGroup.rotation.y += diffRot * 0.22;
+
+        this.walkTime += running ? 0.30 : 0.18;
+        this.animateCharacterWalk(this.walkTime, running);
+
+        if (Math.random() < 0.22) {
+          this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
+        }
+      } else {
+        this.animateCharacterIdle();
+      }
+
+      // Pulo na arena de guerra
+      if (this.isJumping) {
+        this.playerPosY += this.jumpVelY;
+        this.jumpVelY -= 0.022;
+        if (this.playerPosY <= 0) {
+          this.playerPosY = 0;
+          this.isJumping = false;
+          this.jumpVelY = 0;
+          this.emitSnowSpray(6, 0);
+        }
+      }
+
+      this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
+
+      // Câmera terceira pessoa na arena de guerra (com ADS)
+      const targetLookY = this.playerPosY + 1.25;
+      const cosPitch = Math.cos(this.cameraAngleX);
+      const sinPitch = Math.sin(this.cameraAngleX);
+
+      const shoulderOffset = this.isAimingDownSights ? 0.72 : 0.45;
+      const rightCamX = Math.cos(this.cameraAngleY) * shoulderOffset;
+      const rightCamZ = -Math.sin(this.cameraAngleY) * shoulderOffset;
+
+      const currentDist = this.isAimingDownSights ? Math.max(2.4, this.cameraDistance * 0.62) : this.cameraDistance;
+      const camX = this.playerPosX + rightCamX + Math.sin(this.cameraAngleY) * (currentDist * cosPitch);
+      const camZ = this.playerPosZ + rightCamZ + Math.cos(this.cameraAngleY) * (currentDist * cosPitch);
+      const camY = Math.max(this.playerPosY + 0.5, this.playerPosY + (this.isAimingDownSights ? 1.55 : 1.4) + (currentDist * sinPitch));
+
+      this.camera.position.set(camX, camY, camZ);
+      this.camera.lookAt(
+        this.playerPosX + rightCamX * (this.isAimingDownSights ? 0.8 : 0.5),
+        targetLookY,
+        this.playerPosZ + rightCamZ * (this.isAimingDownSights ? 0.8 : 0.5)
+      );
+
+      if (this.snowParticles) {
+        this.snowParticles.position.x = this.playerPosX;
+        this.snowParticles.position.z = this.playerPosZ;
+      }
+
+    } else if (this.currentScene === 'SHOOTING_GALLERY') {
+      const cosPitch = Math.cos(this.cameraAngleX);
+      const sinPitch = Math.sin(this.cameraAngleX);
+      const sinYaw = Math.sin(this.cameraAngleY);
+      const cosYaw = Math.cos(this.cameraAngleY);
+
+      this.camera.position.set(0, 1.65, 0);
+      const lookX = -sinYaw * cosPitch * 10;
+      const lookY = 1.65 - sinPitch * 10;
+      const lookZ = -cosYaw * cosPitch * 10;
+      this.camera.lookAt(lookX, lookY, lookZ);
+
+      this.updateCarnivalShooting();
 
     } else if (this.currentScene === 'RACING') {
       // Física da descida na montanha

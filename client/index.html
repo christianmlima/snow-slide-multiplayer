@@ -267,13 +267,140 @@
       transform: translate(-50%, -50%);
       width: 8px;
       height: 8px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1.5px solid rgba(15, 23, 42, 0.75);
+      background: rgba(255, 255, 255, 0.95);
+      border: 1.5px solid rgba(15, 23, 42, 0.85);
       border-radius: 50%;
       pointer-events: none;
       z-index: 20;
       display: none;
       box-shadow: 0 0 6px rgba(56, 189, 248, 0.9);
+      transition: width 0.15s ease-out, height 0.15s ease-out, background 0.15s, border-color 0.15s;
+    }
+    #hub-crosshair.aiming {
+      width: 26px;
+      height: 26px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 2px solid #38bdf8;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.95), inset 0 0 6px rgba(56, 189, 248, 0.5);
+    }
+    #hub-crosshair.aiming::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 4px;
+      height: 4px;
+      background: #ffffff;
+      border-radius: 50%;
+    }
+
+    /* Barra de Carga de Força do Arremesso */
+    #snowball-charge-container {
+      position: absolute;
+      top: calc(50% + 24px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 140px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.6);
+      border-radius: 10px;
+      padding: 4px 8px;
+      z-index: 21;
+      display: none;
+      text-align: center;
+      backdrop-filter: blur(6px);
+      pointer-events: none;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    }
+    #snowball-charge-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #snowball-charge-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #38bdf8, #f59e0b, #ef4444);
+      border-radius: 4px;
+      transition: width 0.04s linear;
+    }
+    #snowball-charge-text {
+      font-size: 0.68rem;
+      font-weight: 800;
+      color: #e2e8f0;
+      margin-top: 3px;
+      letter-spacing: 0.5px;
+    }
+
+    /* HUD do Minigame de Tiro ao Alvo (Festival/Circo) */
+    #shooting-hud {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.92);
+      border: 2px solid #f43f5e;
+      border-radius: 16px;
+      padding: 12px 24px;
+      color: white;
+      z-index: 15;
+      display: none;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(244, 63, 94, 0.4);
+      backdrop-filter: blur(8px);
+    }
+    .carnival-hud-title {
+      font-size: 0.85rem;
+      font-weight: 900;
+      color: #fb7185;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .carnival-hud-stats {
+      display: flex;
+      gap: 16px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* HUD da Arena de Guerra de Neve */
+    #snowball-war-hud {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.92);
+      border: 2px solid #06b6d4;
+      border-radius: 16px;
+      padding: 12px 24px;
+      color: white;
+      z-index: 15;
+      display: none;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(6, 182, 212, 0.4);
+      backdrop-filter: blur(8px);
+    }
+    .war-hud-title {
+      font-size: 0.85rem;
+      font-weight: 900;
+      color: #67e8f9;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .war-hud-stats {
+      display: flex;
+      gap: 16px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      justify-content: center;
+      align-items: center;
     }
 
     /* Cutscene / Transição do Bondinho */
@@ -581,7 +708,7 @@
 <body>
 
   <!-- Badge com o Número da Versão Ativa -->
-  <div id="version-badge">v2.1.0-STABLE</div>
+  <div id="version-badge">v2.2.0-STABLE</div>
 
   <!-- Container de Toasts Elegantes -->
   <div id="toast-container"></div>
@@ -589,8 +716,40 @@
   <!-- Banner Flutuante de Slalom -->
   <div id="slalom-popup">+100 PTS! PORTAL SLALOM!</div>
 
-  <!-- Retículo / Mira Central (Estilo Fortnite/Roblox) -->
+  <!-- Retículo / Mira Central (Estilo Fortnite/Roblox com ADS) -->
   <div id="hub-crosshair"></div>
+
+  <!-- Barra de Carga de Força do Arremesso -->
+  <div id="snowball-charge-container">
+    <div id="snowball-charge-bar">
+      <div id="snowball-charge-fill"></div>
+    </div>
+    <div id="snowball-charge-text">FORÇA: 50%</div>
+  </div>
+
+  <!-- HUD do Minigame de Tiro ao Alvo (Circo/Festival) -->
+  <div id="shooting-hud">
+    <div class="carnival-hud-title">🎪 ESTANDE DE TIRO FESTIVO</div>
+    <div class="carnival-hud-stats">
+      <span>🎯 <span id="shooting-score-val">0</span> pts</span>
+      <span style="color:#fb7185;">⏱️ <span id="shooting-time-val">40</span>s</span>
+      <span style="color:#38bdf8;">💥 <span id="shooting-hits-val">0</span> acertos</span>
+      <span id="shooting-combo-badge" style="display:none; color:#facc15;">🔥 x<span id="shooting-combo-val">1</span></span>
+    </div>
+    <button id="exit-shooting-btn" class="mini-btn" style="background:#ef4444; margin-top:8px;">⬅ Sair do Estande [ESC]</button>
+  </div>
+
+  <!-- HUD da Arena de Guerra de Neve (Fortes e Trincheiras) -->
+  <div id="snowball-war-hud">
+    <div class="war-hud-title">❄️ ARENA DE GUERRA DE NEVE</div>
+    <div class="war-hud-stats">
+      <span>❤️ <span id="war-hearts">❤️❤️❤️</span></span>
+      <span style="color:#67e8f9;">🎯 <span id="war-kos-val">0</span> KOs</span>
+      <span style="color:#fde047;">⏱️ <span id="war-time-val">60</span>s</span>
+      <span style="color:#38bdf8;">⭐ <span id="war-score-val">0</span> pts</span>
+    </div>
+    <button id="exit-war-btn" class="mini-btn" style="background:#ef4444; margin-top:8px;">⬅ Sair da Arena [ESC]</button>
+  </div>
 
   <!-- Tela de Login -->
   <div id="login-screen" class="screen">
@@ -611,7 +770,10 @@
     <button id="open-settings-btn" class="mini-btn" style="background:#334155;">⚙️ Configurações [O]</button>
     <div style="margin-top: 10px; font-size: 0.72rem; color: #94a3b8; line-height: 1.45;">
       🖱️ <strong>Câmera:</strong> Mova o mouse (Estilo Fortnite)<br>
-      ❄️ <strong>Bola de Neve:</strong> Clique Botão Esquerdo<br>
+      🎯 <strong>Mirar (ADS):</strong> Segure Botão Direito<br>
+      ❄️ <strong>Bola de Neve:</strong> Segure Botão Esquerdo (Carregar Força)<br>
+      🎪 <strong>Tiro ao Alvo:</strong> Estande do Festival [E]<br>
+      ⚔️ <strong>Guerra de Neve:</strong> Arena dos Fortes [E]<br>
       🚶 <strong>Andar:</strong> W,A,S,D / Analógico<br>
       🏃 <strong>Correr:</strong> Segure Shift<br>
       🪑 <strong>Bancos:</strong> Aperte [E] para sentar<br>
@@ -662,6 +824,16 @@
   <div id="phone-booth-prompt" class="interactive-prompt" style="border-color: #ef4444;">
     <strong style="color:#ef4444;">📞 Cabine Mágica [Pressione E]</strong>
     <span>Entre na cabine telefônica para se transformar em outro personagem!</span>
+  </div>
+
+  <div id="carnival-prompt" class="interactive-prompt" style="border-color: #f43f5e;">
+    <strong style="color:#f43f5e;">🎯 Tiro ao Alvo do Festival [Pressione E]</strong>
+    <span>Acerte patinhos de madeira e alvos móveis com sua espingarda de rolha!</span>
+  </div>
+
+  <div id="snowball-war-prompt" class="interactive-prompt" style="border-color: #06b6d4;">
+    <strong style="color:#06b6d4;">❄️ Arena de Guerra de Neve [Pressione E]</strong>
+    <span>Batalha épica em labirinto de trincheiras e fortes de neve!</span>
   </div>
 
   <div id="sit-bench-prompt" class="interactive-prompt" style="border-color: #f59e0b;">
@@ -860,6 +1032,68 @@
 
       <button id="retry-race-btn" class="btn" style="background: linear-gradient(to right, #0ea5e9, #22c55e);">🔄 Correr Novamente</button>
       <button id="finish-to-hub-btn" class="btn secondary">🏔️ Voltar à Vila Alpina</button>
+    </div>
+  </div>
+
+  <!-- Modal de Resultados do Tiro ao Alvo do Festival -->
+  <div id="shooting-results-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width: 480px; text-align: center;">
+      <div style="font-size: 3.5rem; margin-bottom: 6px;">🎪🎯</div>
+      <h2 style="color: #fb7185; margin: 0 0 4px 0; font-size: 1.6rem;">Fim da Rodada Festiva!</h2>
+      <p style="color: #94a3b8; font-size: 0.88rem; margin: 0 0 16px 0;">Você mandou muito bem com sua espingarda de rolha no festival!</p>
+      
+      <div class="finish-grid">
+        <div class="finish-stat">
+          <div class="finish-stat-val" id="shooting-final-score" style="color:#fb7185;">680</div>
+          <div class="finish-stat-lbl">🎯 Pontuação</div>
+        </div>
+        <div class="finish-stat">
+          <div class="finish-stat-val" id="shooting-final-hits" style="color:#22c55e;">24</div>
+          <div class="finish-stat-lbl">🦆 Alvos Derrubados</div>
+        </div>
+        <div class="finish-stat">
+          <div class="finish-stat-val" id="shooting-final-accuracy" style="color:#38bdf8;">85%</div>
+          <div class="finish-stat-lbl">🎯 Precisão de Mira</div>
+        </div>
+        <div class="finish-stat">
+          <div class="finish-stat-val" id="shooting-final-coins" style="color:#facc15;">+120</div>
+          <div class="finish-stat-lbl">💰 Moedas Ganhas</div>
+        </div>
+      </div>
+
+      <button id="retry-shooting-btn" class="btn" style="background: linear-gradient(to right, #f43f5e, #f59e0b);">🔄 Jogar Novamente</button>
+      <button id="shooting-to-hub-btn" class="btn secondary">🏔️ Voltar à Vila Alpina</button>
+    </div>
+  </div>
+
+  <!-- Modal de Resultados da Guerra de Bolas de Neve -->
+  <div id="snowball-war-results-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width: 480px; text-align: center;">
+      <div style="font-size: 3.5rem; margin-bottom: 6px;">❄️⚔️</div>
+      <h2 style="color: #38bdf8; margin: 0 0 4px 0; font-size: 1.6rem;">Batalha de Neve Encerrada!</h2>
+      <p style="color: #94a3b8; font-size: 0.88rem; margin: 0 0 16px 0;">A tempestade acalmou e os guerreiros de neve contam suas vitórias!</p>
+      
+      <div class="finish-grid">
+        <div class="finish-stat">
+          <div class="finish-stat-val" id="war-final-kos" style="color:#38bdf8;">5</div>
+          <div class="finish-stat-lbl">🎯 Nocauteados (KOs)</div>
+        </div>
+        <div class="finish-stat">
+          <div class="finish-stat-val" id="war-final-hits" style="color:#22c55e;">14</div>
+          <div class="finish-stat-lbl">❄️ Bolas Acertadas</div>
+        </div>
+        <div class="finish-stat">
+          <div class="finish-stat-val" id="war-final-rank" style="color:#facc15;">🏆 1º Lugar</div>
+          <div class="finish-stat-lbl">🎖️ Classificação</div>
+        </div>
+        <div class="finish-stat">
+          <div class="finish-stat-val" id="war-final-coins" style="color:#facc15;">+250</div>
+          <div class="finish-stat-lbl">💰 Moedas Ganhas</div>
+        </div>
+      </div>
+
+      <button id="retry-war-btn" class="btn" style="background: linear-gradient(to right, #0ea5e9, #06b6d4);">🔄 Nova Batalha</button>
+      <button id="war-to-hub-btn" class="btn secondary">🏔️ Voltar à Vila Alpina</button>
     </div>
   </div>
 
