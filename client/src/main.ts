@@ -904,97 +904,99 @@ class SnowSlideTPSMasterEngine {
   // MODELOS 3D PROCEDURAIS DOS 4 PERSONAGENS (METAMORFOSE)
   // =========================================================================
 
-  // 1. PINGUIM ALPINO ULTRA-DETALHADO
-  // 1. PINGUIM ALPINO - ESTILO ANIMAL CROSSING (VILLAGER)
+  // =========================================================================
+  // MODELOS 3D PROCEDURAIS DOS 4 PERSONAGENS (DESIGNER VINYL COLLECTIBLE TOYS)
+  // Estilo: Chibi com Cabeça Gigante Perfeitamente Esférica, Corpo Diminuto,
+  // Curvatura Ultra-Suave sem Arestas Vivas e Textura de Plástico/Vinil Satin.
+  // =========================================================================
+
+  // 1. PINGUIM ALPINO - DESIGNER VINYL COLLECTIBLE TOY
   private createDetailedPenguin(): THREE.Group {
     const root = new THREE.Group();
-    // Materiais aveludados e suaves estilo Animal Crossing / Vinyl Toy
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.88 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 });
-    const beakMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.65 });
-    const footMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.70 });
+    // Material de vinil colecionável com acabamento acetinado suave (Designer Vinyl Toy)
+    const vinylMat = { roughness: 0.35, metalness: 0.04 };
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, ...vinylMat });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, ...vinylMat });
+    const beakMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.32, metalness: 0.04 });
+    const footMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.35, metalness: 0.04 });
     const eyePupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
-    const eyeIrisMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.4 });
+    const eyeIrisMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.20 });
     const glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const blushMat = new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.60 });
+    const blushMat = new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.55 });
 
     this.charTorso = new THREE.Group();
 
-    // Tronco arredondado e fofinho em formato de pera (Animal Crossing villager silhouette)
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.48, 20, 20), bodyMat);
-    body.scale.set(0.96, 1.08, 0.94);
-    body.position.y = 0.62;
+    // Tronco Chibi diminuto em vinil suave
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 24), bodyMat);
+    body.scale.set(0.96, 1.04, 0.92);
+    body.position.y = 0.44;
     body.castShadow = true;
     this.charTorso.add(body);
 
-    // Barriga branca em formato clássico e fofo de pinguim do Animal Crossing
-    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.44, 20, 20), whiteMat);
-    belly.scale.set(0.82, 0.98, 0.62);
-    belly.position.set(0, 0.58, 0.22);
+    // Barriga branca frontal em patch esférico suave no tronco
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 20), whiteMat);
+    belly.scale.set(0.85, 0.94, 0.55);
+    belly.position.set(0, 0.42, 0.14);
     this.charTorso.add(belly);
 
-    // Colarinho macio de penugem
-    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.045, 8, 24), whiteMat);
+    // Colarinho suave de vinil conectando corpo à cabeça
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.035, 10, 24), whiteMat);
     collar.rotation.x = Math.PI / 2;
-    collar.position.y = 0.96;
+    collar.position.y = 0.68;
     this.charTorso.add(collar);
 
-    // Cabeça Chibi grande e arredondada (Animal Crossing style)
+    // Cabeça CHIBI MASSIVA E PERFEITAMENTE ESFÉRICA (Curvatura ultra-suave, zero arestas afiadas)
     this.charHead = new THREE.Group();
-    this.charHead.position.y = 1.18;
+    this.charHead.position.y = 0.96;
 
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.44, 24, 24), bodyMat);
-    headMesh.scale.set(1.06, 0.96, 1.02);
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.56, 32, 32), bodyMat);
     headMesh.castShadow = true;
     this.charHead.add(headMesh);
 
-    // Rostinho branco frontal com recorte em arco fofo
-    const faceMask = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 20), whiteMat);
-    faceMask.scale.set(0.88, 0.82, 0.62);
-    faceMask.position.set(0, -0.04, 0.22);
+    // Máscara facial branca frontal em recorte arredondado suave
+    const faceMask = new THREE.Mesh(new THREE.SphereGeometry(0.53, 28, 28), whiteMat);
+    faceMask.scale.set(0.88, 0.82, 0.60);
+    faceMask.position.set(0, -0.04, 0.26);
     this.charHead.add(faceMask);
 
-    // Crista de 3 peninhas macias no topo
-    for (let i = -1; i <= 1; i++) {
-      const feather = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.18, 6), bodyMat);
-      feather.position.set(i * 0.07, 0.44, -0.02);
-      feather.rotation.set(-0.3, 0, i * 0.22);
-      this.charHead.add(feather);
-    }
+    // Crista estilizada minimalista de vinil no topo (arredondada, sem pontas afiadas)
+    const crest = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 12), bodyMat);
+    crest.scale.set(1.1, 1.4, 0.8);
+    crest.position.set(0, 0.56, -0.02);
+    this.charHead.add(crest);
 
-    // Bico fofo e alegre estilo Roald/Aurora
-    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.22, 10), beakMat);
-    beak.rotation.x = Math.PI / 2 + 0.12;
-    beak.position.set(0, -0.06, 0.42);
-    beak.scale.set(1.15, 0.85, 1.0);
+    // Bico estilizado de vinil com curvatura suave e ponta arredondada (zero arestas)
+    const beak = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.15, 12, 12), beakMat);
+    beak.rotation.x = Math.PI / 2 + 0.08;
+    beak.position.set(0, -0.06, 0.54);
+    beak.scale.set(1.2, 0.85, 1.0);
     this.charHead.add(beak);
 
-    // Olhos brilhantes estilo Animal Crossing: grandes pupilas com duplo reflexo de luz
+    // Olhos minimalistas de vinil colecionável: grandes pupilas brilhantes com reflexo limpo
     for (const side of [-1, 1]) {
-      const eyeBack = new THREE.Mesh(new THREE.SphereGeometry(0.095, 14, 14), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      eyeBack.scale.set(0.9, 1.1, 0.4);
-      eyeBack.position.set(side * 0.16, 0.06, 0.38);
+      const eyeBack = new THREE.Mesh(new THREE.SphereGeometry(0.11, 18, 18), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      eyeBack.scale.set(0.9, 1.1, 0.35);
+      eyeBack.position.set(side * 0.20, 0.08, 0.48);
 
-      const iris = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), eyeIrisMat);
-      iris.scale.set(0.9, 1.1, 0.35);
-      iris.position.set(side * 0.16, 0.06, 0.41);
+      const iris = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 16), eyeIrisMat);
+      iris.scale.set(0.9, 1.1, 0.3);
+      iris.position.set(side * 0.20, 0.08, 0.51);
 
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), eyePupilMat);
-      pupil.scale.set(0.9, 1.1, 0.3);
-      pupil.position.set(side * 0.16, 0.06, 0.43);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 14), eyePupilMat);
+      pupil.scale.set(0.9, 1.1, 0.25);
+      pupil.position.set(side * 0.20, 0.08, 0.53);
 
-      // Grande brilho superior (catchlight)
-      const glintBig = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), glintMat);
-      glintBig.position.set(side * 0.145, 0.095, 0.45);
+      // Catchlight circular de vinil
+      const glintBig = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), glintMat);
+      glintBig.position.set(side * 0.18, 0.125, 0.55);
 
-      // Pequeno brilho inferior
-      const glintSmall = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), glintMat);
-      glintSmall.position.set(side * 0.175, 0.035, 0.45);
+      const glintSmall = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6), glintMat);
+      glintSmall.position.set(side * 0.22, 0.05, 0.55);
 
-      // Bochecha rosada circular
-      const blush = new THREE.Mesh(new THREE.CircleGeometry(0.065, 16), blushMat);
-      blush.position.set(side * 0.27, -0.08, 0.36);
-      blush.rotation.y = side * 0.42;
+      // Bochecha rosada circular translúcida
+      const blush = new THREE.Mesh(new THREE.CircleGeometry(0.075, 16), blushMat);
+      blush.position.set(side * 0.34, -0.08, 0.44);
+      blush.rotation.y = side * 0.45;
 
       this.charHead.add(eyeBack, iris, pupil, glintBig, glintSmall, blush);
     }
@@ -1004,70 +1006,71 @@ class SnowSlideTPSMasterEngine {
     this.charTorso.add(this.charHead);
     this.attachEquippedScarf(this.charTorso);
 
-    // Asinhas (Flippers) curtinhas e gordinhas estilo Animal Crossing
-    const createAnimalCrossingFlipper = (side: number) => {
+    // Asinhas (Flippers) curtinhas e arredondadas de vinil
+    const createVinylFlipper = (side: number) => {
       const flipperGroup = new THREE.Group();
-      const flipper = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.38, 10, 10), bodyMat);
-      flipper.scale.set(1.0, 1.0, 0.45);
-      flipper.position.y = -0.16;
+      const flipper = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.22, 10, 10), bodyMat);
+      flipper.scale.set(1.0, 1.0, 0.5);
+      flipper.position.y = -0.10;
       flipper.castShadow = true;
 
-      const innerTrim = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.32, 8, 8), whiteMat);
-      innerTrim.position.set(-side * 0.015, -0.16, 0.03);
-      innerTrim.scale.set(0.95, 0.95, 0.3);
+      const innerTrim = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.18, 8, 8), whiteMat);
+      innerTrim.position.set(-side * 0.01, -0.10, 0.02);
+      innerTrim.scale.set(0.95, 0.95, 0.35);
 
       flipperGroup.add(flipper, innerTrim);
-      flipperGroup.position.set(side * 0.48, 0.65, 0.05);
-      flipperGroup.rotation.set(-0.15, 0, side * -0.42);
+      flipperGroup.position.set(side * 0.30, 0.48, 0.04);
+      flipperGroup.rotation.set(-0.12, 0, side * -0.38);
       return flipperGroup as any;
     };
 
-    this.charArmL = createAnimalCrossingFlipper(-1);
-    this.charArmR = createAnimalCrossingFlipper(1);
+    this.charArmL = createVinylFlipper(-1);
+    this.charArmR = createVinylFlipper(1);
 
     const handSnowball = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 })
+      new THREE.SphereGeometry(0.12, 10, 10),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 })
     );
-    handSnowball.position.set(0, -0.32, 0.10);
+    handSnowball.position.set(0, -0.22, 0.08);
     handSnowball.visible = false;
     this.charArmR.add(handSnowball);
 
     this.charTorso.add(this.charArmL, this.charArmR);
 
-    // Rabinho arredondado de fofura
-    const tail = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 10), bodyMat);
-    tail.scale.set(1.1, 0.75, 1.2);
-    tail.position.set(0, 0.42, -0.44);
+    // Rabinho arredondado de vinil
+    const tail = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), bodyMat);
+    tail.scale.set(1.0, 0.75, 1.1);
+    tail.position.set(0, 0.36, -0.28);
     this.charTail = tail;
     this.charTorso.add(tail);
 
     root.add(this.charTorso);
 
-    // Patinhas arredondadas no estilo Animal Crossing (paddle feet)
-    const createAnimalCrossingFoot = (posX: number) => {
+    // Patinhas arredondadas estilo Toy (cápsulas suaves, sem arestas quadradas)
+    const createVinylFoot = (posX: number) => {
       const foot = new THREE.Group();
-      const footMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.09, 0.34), footMat);
-      footMesh.position.set(0, 0.045, 0.10);
-      footMesh.scale.set(1.0, 0.85, 1.1);
+      const footMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 12, 12), footMat);
+      footMesh.rotation.x = Math.PI / 2;
+      footMesh.position.set(0, 0.045, 0.06);
+      footMesh.scale.set(1.15, 0.85, 1.0);
       footMesh.castShadow = true;
 
-      // 3 dedinhos arredondados fofos na frente
+      // 3 dedinhos arredondados
       for (let t = -1; t <= 1; t++) {
-        const toe = new THREE.Mesh(new THREE.SphereGeometry(0.042, 8, 8), footMat);
-        toe.scale.set(0.9, 0.7, 1.2);
-        toe.position.set(t * 0.075, 0.04, 0.26);
+        const toe = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 8), footMat);
+        toe.scale.set(0.9, 0.7, 1.1);
+        toe.position.set(t * 0.055, 0.035, 0.18);
         foot.add(toe);
       }
 
       foot.add(footMesh);
       foot.position.set(posX, 0.02, 0.02);
-      foot.rotation.y = posX < 0 ? -0.18 : 0.18; // Levemente virado para fora (waddle!)
+      foot.rotation.y = posX < 0 ? -0.15 : 0.15;
       return foot as any;
     };
 
-    this.charFootL = createAnimalCrossingFoot(-0.22);
-    this.charFootR = createAnimalCrossingFoot(0.22);
+    this.charFootL = createVinylFoot(-0.16);
+    this.charFootR = createVinylFoot(0.16);
     root.add(this.charFootL, this.charFootR);
 
     const rig: CharacterRig = {
@@ -1087,84 +1090,82 @@ class SnowSlideTPSMasterEngine {
     return root;
   }
 
-  // 2. SAPO VERDE - ESTILO ANIMAL CROSSING (VILLAGER)
+  // 2. SAPO VERDE - DESIGNER VINYL COLLECTIBLE TOY
   private createDetailedFrog(): THREE.Group {
     const root = new THREE.Group();
-    const frogGreenMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.86 });
-    const frogBellyMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.82 });
+    const vinylMat = { roughness: 0.35, metalness: 0.04 };
+    const frogGreenMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, ...vinylMat });
+    const frogBellyMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, ...vinylMat });
     const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
     const glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const blushMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.60 });
+    const blushMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.55 });
     const mouthMat = new THREE.MeshBasicMaterial({ color: 0x14532d });
 
     this.charTorso = new THREE.Group();
 
-    // Tronco compacto e rechonchudo estilo pelúcia / vinyl toy
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.46, 20, 20), frogGreenMat);
-    body.scale.set(1.04, 0.96, 0.98);
-    body.position.y = 0.58;
+    // Tronco Chibi diminuto em vinil verde esmeralda
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 24), frogGreenMat);
+    body.scale.set(1.02, 0.98, 0.95);
+    body.position.y = 0.42;
     body.castShadow = true;
     this.charTorso.add(body);
 
-    // Barriguinha redonda em tom creme/amarelo pastel
-    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.40, 18, 18), frogBellyMat);
-    belly.position.set(0, 0.54, 0.22);
-    belly.scale.set(0.86, 0.84, 0.56);
+    // Barriguinha creme arredondada
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 20), frogBellyMat);
+    belly.position.set(0, 0.40, 0.14);
+    belly.scale.set(0.85, 0.85, 0.55);
     this.charTorso.add(belly);
 
-    // Cabeça Chibi gigante esférica (Animal Crossing frog head)
+    // Cabeça CHIBI MASSIVA E PERFEITAMENTE ESFÉRICA (Curvatura contínua, zero cantos afiados)
     this.charHead = new THREE.Group();
-    this.charHead.position.y = 1.12;
+    this.charHead.position.y = 0.96;
 
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.48, 24, 24), frogGreenMat);
-    headMesh.scale.set(1.22, 0.94, 1.12);
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.56, 32, 32), frogGreenMat);
     headMesh.castShadow = true;
     this.charHead.add(headMesh);
 
-    // Dois bulbos oculares icônicos no topo da cabeça (estilo Lily/Henry)
+    // Dois bulbos oculares icônicos esféricos no topo da cabeça esférica
     for (const side of [-1, 1]) {
-      const eyeSocket = new THREE.Mesh(new THREE.SphereGeometry(0.20, 16, 16), frogGreenMat);
-      eyeSocket.position.set(side * 0.26, 0.32, 0.08);
-      eyeSocket.scale.set(1.0, 1.05, 1.0);
+      const eyeSocket = new THREE.Mesh(new THREE.SphereGeometry(0.22, 22, 22), frogGreenMat);
+      eyeSocket.position.set(side * 0.28, 0.38, 0.10);
       this.charHead.add(eyeSocket);
 
-      // Globo ocular branco grande e saltado
-      const eyeGlobe = new THREE.Mesh(new THREE.SphereGeometry(0.155, 14, 14), eyeWhiteMat);
-      eyeGlobe.position.set(side * 0.26, 0.34, 0.16);
+      // Globo ocular branco grande e saltado de vinil
+      const eyeGlobe = new THREE.Mesh(new THREE.SphereGeometry(0.18, 18, 18), eyeWhiteMat);
+      eyeGlobe.position.set(side * 0.28, 0.40, 0.18);
 
       // Pupila redonda e expressiva
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.095, 12, 12), pupilMat);
-      pupil.position.set(side * 0.26, 0.34, 0.27);
-      pupil.scale.set(0.95, 1.05, 0.4);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 16), pupilMat);
+      pupil.position.set(side * 0.28, 0.40, 0.31);
+      pupil.scale.set(0.95, 1.05, 0.35);
 
-      // Brilho grande (catchlight superior)
-      const glintBig = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 8), glintMat);
-      glintBig.position.set(side * 0.235, 0.38, 0.29);
+      // Brilho duplo
+      const glintBig = new THREE.Mesh(new THREE.SphereGeometry(0.036, 8, 8), glintMat);
+      glintBig.position.set(side * 0.25, 0.44, 0.33);
 
-      // Brilho menor (catchlight inferior)
-      const glintSmall = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 6), glintMat);
-      glintSmall.position.set(side * 0.28, 0.30, 0.29);
+      const glintSmall = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 6), glintMat);
+      glintSmall.position.set(side * 0.30, 0.36, 0.33);
 
       this.charHead.add(eyeGlobe, pupil, glintBig, glintSmall);
 
-      // Bochechas rosadas fofas bem debaixo dos olhos
+      // Bochechas rosadas circulares
       const blush = new THREE.Mesh(new THREE.CircleGeometry(0.075, 16), blushMat);
-      blush.position.set(side * 0.35, -0.04, 0.38);
+      blush.position.set(side * 0.36, -0.06, 0.42);
       blush.rotation.y = side * 0.45;
       this.charHead.add(blush);
     }
 
-    // Sorriso alegre largo de orelha a orelha com covinhas
-    const smile = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.022, 8, 20, Math.PI * 0.76), mouthMat);
-    smile.rotation.set(Math.PI * 0.88, 0, Math.PI * 0.12);
-    smile.position.set(0, -0.06, 0.48);
+    // Sorriso alegre minimalista em arco suave
+    const smile = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.024, 10, 24, Math.PI * 0.72), mouthMat);
+    smile.rotation.set(Math.PI * 0.88, 0, Math.PI * 0.14);
+    smile.position.set(0, -0.08, 0.54);
     this.charHead.add(smile);
 
-    // Covinhas nas pontas do sorriso
+    // Covinhas arredondadas nas pontas do sorriso
     for (const side of [-1, 1]) {
-      const dimple = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 6), mouthMat);
-      dimple.position.set(side * 0.22, -0.03, 0.44);
+      const dimple = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 8), mouthMat);
+      dimple.position.set(side * 0.24, -0.05, 0.50);
       this.charHead.add(dimple);
     }
 
@@ -1173,60 +1174,60 @@ class SnowSlideTPSMasterEngine {
     this.charTorso.add(this.charHead);
     this.attachEquippedScarf(this.charTorso);
 
-    // Bracinhos curtos e fofinhos com dedinhos em esferas (ventosas)
-    const createAnimalCrossingFrogArm = (side: number) => {
+    // Bracinhos curtos e fofinhos de vinil com dedinhos em esferas
+    const createVinylFrogArm = (side: number) => {
       const armGroup = new THREE.Group();
-      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.34, 8, 8), frogGreenMat);
-      arm.position.y = -0.16;
+      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.20, 10, 10), frogGreenMat);
+      arm.position.y = -0.10;
       armGroup.add(arm);
 
-      // 3 dedinhos arredondados fofos na mãozinha
       for (let d = -1; d <= 1; d++) {
-        const finger = new THREE.Mesh(new THREE.SphereGeometry(0.036, 8, 8), frogBellyMat);
-        finger.position.set(d * 0.05, -0.34, 0.04);
+        const finger = new THREE.Mesh(new THREE.SphereGeometry(0.030, 8, 8), frogBellyMat);
+        finger.position.set(d * 0.04, -0.22, 0.03);
         armGroup.add(finger);
       }
 
-      armGroup.position.set(side * 0.48, 0.60, 0.06);
-      armGroup.rotation.set(0.1, 0, side * -0.36);
+      armGroup.position.set(side * 0.30, 0.46, 0.04);
+      armGroup.rotation.set(0.1, 0, side * -0.35);
       return armGroup as any;
     };
 
-    this.charArmL = createAnimalCrossingFrogArm(-1);
-    this.charArmR = createAnimalCrossingFrogArm(1);
+    this.charArmL = createVinylFrogArm(-1);
+    this.charArmR = createVinylFrogArm(1);
 
     const handSnowball = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 })
+      new THREE.SphereGeometry(0.12, 10, 10),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 })
     );
-    handSnowball.position.set(0, -0.32, 0.10);
+    handSnowball.position.set(0, -0.22, 0.08);
     handSnowball.visible = false;
     this.charArmR.add(handSnowball);
 
     this.charTorso.add(this.charArmL, this.charArmR);
     root.add(this.charTorso);
 
-    // Patinhas traseiras arredondadas com 3 dedinhos de bolinha
-    const createAnimalCrossingFrogFoot = (posX: number) => {
+    // Patinhas traseiras arredondadas com esferas suaves (zero cantos retos)
+    const createVinylFrogFoot = (posX: number) => {
       const foot = new THREE.Group();
-      const footMesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.32), frogGreenMat);
-      footMesh.position.set(0, 0.04, 0.10);
+      const footMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 12, 12), frogGreenMat);
+      footMesh.rotation.x = Math.PI / 2;
+      footMesh.position.set(0, 0.04, 0.06);
       footMesh.castShadow = true;
       foot.add(footMesh);
 
       for (let toe = -1; toe <= 1; toe++) {
-        const ballToe = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), frogBellyMat);
-        ballToe.position.set(toe * 0.075, 0.04, 0.28);
+        const ballToe = new THREE.Mesh(new THREE.SphereGeometry(0.036, 8, 8), frogBellyMat);
+        ballToe.position.set(toe * 0.06, 0.035, 0.18);
         foot.add(ballToe);
       }
 
       foot.position.set(posX, 0.02, 0.02);
-      foot.rotation.y = posX < 0 ? -0.22 : 0.22;
+      foot.rotation.y = posX < 0 ? -0.18 : 0.18;
       return foot as any;
     };
 
-    this.charFootL = createAnimalCrossingFrogFoot(-0.24);
-    this.charFootR = createAnimalCrossingFrogFoot(0.24);
+    this.charFootL = createVinylFrogFoot(-0.16);
+    this.charFootR = createVinylFrogFoot(0.16);
     root.add(this.charFootL, this.charFootR);
     this.charTail = null;
 
@@ -1247,13 +1248,14 @@ class SnowSlideTPSMasterEngine {
     return root;
   }
 
-  // 3. GATO SIAMÊS - ESTILO ANIMAL CROSSING (VILLAGER)
+  // 3. GATO SIAMÊS - DESIGNER VINYL COLLECTIBLE TOY
   private createDetailedCat(): THREE.Group {
     const root = new THREE.Group();
-    const furCreamMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.88 });
-    const sealBrownMat = new THREE.MeshStandardMaterial({ color: 0x3b180d, roughness: 0.84 });
-    const innerEarPinkMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.75 });
-    const sapphireEyeMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.35 });
+    const vinylMat = { roughness: 0.35, metalness: 0.04 };
+    const furCreamMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, ...vinylMat });
+    const sealBrownMat = new THREE.MeshStandardMaterial({ color: 0x3b180d, ...vinylMat });
+    const innerEarPinkMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, ...vinylMat });
+    const sapphireEyeMat = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, roughness: 0.22 });
     const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
     const glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const whiskerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -1262,100 +1264,97 @@ class SnowSlideTPSMasterEngine {
 
     this.charTorso = new THREE.Group();
 
-    // Tronco compacto e fofinho em formato de pera
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.44, 20, 20), furCreamMat);
+    // Tronco Chibi diminuto em vinil creme suave
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.27, 24, 24), furCreamMat);
     body.scale.set(0.96, 1.04, 0.94);
-    body.position.y = 0.60;
+    body.position.y = 0.44;
     body.castShadow = true;
     this.charTorso.add(body);
 
-    // Peitoral fofinho em tom marfim
-    const chestBib = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }));
+    // Peitoral marfim suave
+    const chestBib = new THREE.Mesh(new THREE.SphereGeometry(0.24, 20, 20), new THREE.MeshStandardMaterial({ color: 0xffffff, ...vinylMat }));
     chestBib.scale.set(0.85, 0.92, 0.55);
-    chestBib.position.set(0, 0.62, 0.22);
+    chestBib.position.set(0, 0.43, 0.14);
     this.charTorso.add(chestBib);
 
-    // Cabeça Chibi felina com bochechas arredondadas (Animal Crossing cat head)
+    // Cabeça CHIBI MASSIVA E PERFEITAMENTE ESFÉRICA
     this.charHead = new THREE.Group();
-    this.charHead.position.y = 1.16;
+    this.charHead.position.y = 0.96;
 
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.44, 24, 24), furCreamMat);
-    headMesh.scale.set(1.14, 0.96, 1.06);
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.56, 32, 32), furCreamMat);
     headMesh.castShadow = true;
     this.charHead.add(headMesh);
 
     // Máscara siamesa chocolate no centro do rosto
-    const mask = new THREE.Mesh(new THREE.SphereGeometry(0.32, 18, 18), sealBrownMat);
+    const mask = new THREE.Mesh(new THREE.SphereGeometry(0.44, 26, 26), sealBrownMat);
     mask.scale.set(1.02, 0.82, 0.65);
-    mask.position.set(0, -0.04, 0.22);
+    mask.position.set(0, -0.04, 0.28);
     this.charHead.add(mask);
 
-    // Orelhas triangulares empinadas características com interior aveludado rosa
+    // Orelhas de vinil com pontas arredondadas suaves (zero arestas vivas)
     for (const side of [-1, 1]) {
       const earGroup = new THREE.Group();
-      const earOuter = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 5), sealBrownMat);
-      earOuter.position.set(0, 0.14, 0);
-      earOuter.scale.set(1.1, 1.0, 0.6);
+      const earOuter = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.26, 12), sealBrownMat);
+      earOuter.position.set(0, 0.13, 0);
+      earOuter.scale.set(1.1, 1.0, 0.65);
 
-      const earInner = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.20, 4), innerEarPinkMat);
-      earInner.position.set(0, 0.12, 0.04);
-      earInner.scale.set(1.0, 0.95, 0.4);
+      const earInner = new THREE.Mesh(new THREE.ConeGeometry(0.10, 0.18, 10), innerEarPinkMat);
+      earInner.position.set(0, 0.11, 0.04);
+      earInner.scale.set(1.0, 0.95, 0.45);
 
       earGroup.add(earOuter, earInner);
-      earGroup.position.set(side * 0.26, 0.38, 0.04);
+      earGroup.position.set(side * 0.32, 0.44, 0.06);
       earGroup.rotation.set(0.08, 0, -side * 0.35);
       this.charHead.add(earGroup);
     }
 
-    // Narizinho triangular rosa
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.042, 0.06, 5), innerEarPinkMat);
-    nose.rotation.x = -Math.PI / 2;
-    nose.position.set(0, -0.04, 0.44);
+    // Narizinho botão rosa
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), innerEarPinkMat);
+    nose.scale.set(1.1, 0.8, 0.6);
+    nose.position.set(0, -0.04, 0.55);
     this.charHead.add(nose);
 
-    // Boquinha felina clássica em "w" (:3) esculpida em arco duplo
+    // Boquinha felina minimalista em "w" (:3)
     for (const side of [-1, 1]) {
-      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.042, 0.012, 6, 12, Math.PI * 0.9), mouthMat);
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.012, 8, 14, Math.PI * 0.9), mouthMat);
       lip.rotation.set(Math.PI * 0.95, 0, side * 0.2);
-      lip.position.set(side * 0.042, -0.095, 0.44);
+      lip.position.set(side * 0.048, -0.10, 0.54);
       this.charHead.add(lip);
     }
 
-    // Bigodes brancos estilizados fofos
+    // Bigodes brancos estilizados e limpos
     for (const side of [-1, 1]) {
       for (let w = -1; w <= 1; w++) {
-        const whisker = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.24, 4), whiskerMat);
+        const whisker = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.26, 6), whiskerMat);
         whisker.rotation.z = Math.PI / 2 + w * 0.14;
         whisker.rotation.y = side * 0.38;
-        whisker.position.set(side * 0.24, -0.07 + w * 0.025, 0.38);
+        whisker.position.set(side * 0.28, -0.07 + w * 0.03, 0.46);
         this.charHead.add(whisker);
       }
     }
 
-    // Olhos Amendoados de Safira estilo Animal Crossing
+    // Olhos safira de vinil colecionável com reflexo nítido
     for (const side of [-1, 1]) {
-      const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 14), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.105, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
       eyeWhite.scale.set(0.9, 1.1, 0.35);
-      eyeWhite.position.set(side * 0.16, 0.07, 0.36);
+      eyeWhite.position.set(side * 0.19, 0.08, 0.48);
 
-      const iris = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), sapphireEyeMat);
+      const iris = new THREE.Mesh(new THREE.SphereGeometry(0.088, 14, 14), sapphireEyeMat);
       iris.scale.set(0.9, 1.1, 0.3);
-      iris.position.set(side * 0.16, 0.07, 0.39);
+      iris.position.set(side * 0.19, 0.08, 0.51);
 
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 12), pupilMat);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.068, 12, 12), pupilMat);
       pupil.scale.set(0.85, 1.15, 0.25);
-      pupil.position.set(side * 0.16, 0.07, 0.41);
+      pupil.position.set(side * 0.19, 0.08, 0.53);
 
-      // Brilhos duplos dos olhos (sparkle glints)
-      const glintBig = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), glintMat);
-      glintBig.position.set(side * 0.145, 0.105, 0.43);
+      const glintBig = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), glintMat);
+      glintBig.position.set(side * 0.17, 0.12, 0.55);
 
-      const glintSmall = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), glintMat);
-      glintSmall.position.set(side * 0.175, 0.045, 0.43);
+      const glintSmall = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 6), glintMat);
+      glintSmall.position.set(side * 0.21, 0.05, 0.55);
 
-      // Bochechas rosadas circulares
-      const blush = new THREE.Mesh(new THREE.CircleGeometry(0.065, 16), blushMat);
-      blush.position.set(side * 0.29, -0.06, 0.35);
+      const blush = new THREE.Mesh(new THREE.CircleGeometry(0.075, 16), blushMat);
+      blush.position.set(side * 0.35, -0.06, 0.44);
       blush.rotation.y = side * 0.45;
 
       this.charHead.add(eyeWhite, iris, pupil, glintBig, glintSmall, blush);
@@ -1366,67 +1365,65 @@ class SnowSlideTPSMasterEngine {
     this.charTorso.add(this.charHead);
     this.attachEquippedScarf(this.charTorso);
 
-    // Patinhas dianteiras curtinhas com pontas chocolate e almofadinhas
-    const createAnimalCrossingCatArm = (side: number) => {
+    // Patinhas dianteiras curtinhas com pontas chocolate
+    const createVinylCatArm = (side: number) => {
       const pawGroup = new THREE.Group();
-      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.36, 8, 8), furCreamMat);
-      arm.position.y = -0.16;
+      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.22, 10, 10), furCreamMat);
+      arm.position.y = -0.10;
       arm.castShadow = true;
 
-      // Ponta da patinha marrom chocolate
-      const mitt = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 10), sealBrownMat);
-      mitt.position.y = -0.32;
+      const mitt = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), sealBrownMat);
+      mitt.position.y = -0.20;
 
-      // Almofadinha rosa fofa na palma
-      const bean = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), innerEarPinkMat);
-      bean.position.set(0, -0.34, 0.04);
+      const bean = new THREE.Mesh(new THREE.SphereGeometry(0.030, 8, 8), innerEarPinkMat);
+      bean.position.set(0, -0.21, 0.03);
 
       pawGroup.add(arm, mitt, bean);
-      pawGroup.position.set(side * 0.46, 0.62, 0.06);
+      pawGroup.position.set(side * 0.29, 0.47, 0.04);
       pawGroup.rotation.set(-0.1, 0, side * -0.32);
       return pawGroup as any;
     };
 
-    this.charArmL = createAnimalCrossingCatArm(-1);
-    this.charArmR = createAnimalCrossingCatArm(1);
+    this.charArmL = createVinylCatArm(-1);
+    this.charArmR = createVinylCatArm(1);
 
     const handSnowball = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 })
+      new THREE.SphereGeometry(0.12, 10, 10),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 })
     );
-    handSnowball.position.set(0, -0.32, 0.10);
+    handSnowball.position.set(0, -0.22, 0.08);
     handSnowball.visible = false;
     this.charArmR.add(handSnowball);
 
     this.charTorso.add(this.charArmL, this.charArmR);
 
-    // Cauda longa elegante e curva estilo Animal Crossing
+    // Cauda curva de vinil
     const catTail = new THREE.Group();
-    const tailBase = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.05, 0.55, 8), sealBrownMat);
-    tailBase.position.set(0, 0.24, -0.15);
+    const tailBase = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.45, 8), sealBrownMat);
+    tailBase.position.set(0, 0.20, -0.12);
     tailBase.rotation.x = -0.7;
 
-    const tailTip = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), sealBrownMat);
-    tailTip.position.set(0, 0.45, -0.32);
+    const tailTip = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), sealBrownMat);
+    tailTip.position.set(0, 0.38, -0.26);
 
     catTail.add(tailBase, tailTip);
-    catTail.position.set(0, 0.46, -0.36);
+    catTail.position.set(0, 0.36, -0.24);
     this.charTail = catTail;
     this.charTorso.add(catTail);
 
     root.add(this.charTorso);
 
-    // Patinhas traseiras fofas com solas macias
-    const createAnimalCrossingCatFoot = (posX: number) => {
+    // Patinhas traseiras arredondadas de vinil
+    const createVinylCatFoot = (posX: number) => {
       const foot = new THREE.Group();
-      const footMesh = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.08, 0.30), sealBrownMat);
-      footMesh.position.set(0, 0.04, 0.08);
+      const footMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 12, 12), sealBrownMat);
+      footMesh.rotation.x = Math.PI / 2;
+      footMesh.position.set(0, 0.04, 0.06);
       footMesh.castShadow = true;
       foot.add(footMesh);
 
-      // Almofadas da patinha traseira
-      const mainPad = new THREE.Mesh(new THREE.SphereGeometry(0.042, 6, 6), innerEarPinkMat);
-      mainPad.position.set(0, 0.03, 0.16);
+      const mainPad = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), innerEarPinkMat);
+      mainPad.position.set(0, 0.03, 0.14);
       foot.add(mainPad);
 
       foot.position.set(posX, 0.02, 0.02);
@@ -1434,8 +1431,8 @@ class SnowSlideTPSMasterEngine {
       return foot as any;
     };
 
-    this.charFootL = createAnimalCrossingCatFoot(-0.20);
-    this.charFootR = createAnimalCrossingCatFoot(0.20);
+    this.charFootL = createVinylCatFoot(-0.16);
+    this.charFootR = createVinylCatFoot(0.16);
     root.add(this.charFootL, this.charFootR);
 
     const rig: CharacterRig = {
@@ -1455,114 +1452,112 @@ class SnowSlideTPSMasterEngine {
     return root;
   }
 
-  // 4. CACHORRO SHIH TZU - ESTILO ANIMAL CROSSING (VILLAGER)
+  // 4. CACHORRO SHIH TZU - DESIGNER VINYL COLLECTIBLE TOY
   private createDetailedDog(): THREE.Group {
     const root = new THREE.Group();
-    const caramelMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.86 });
-    const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 });
+    const vinylMat = { roughness: 0.35, metalness: 0.04 };
+    const caramelMat = new THREE.MeshStandardMaterial({ color: 0xd97706, ...vinylMat });
+    const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xffffff, ...vinylMat });
     const noseBlackMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
     const tonguePinkMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
-    const ribbonRedMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
-    const bellGoldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.25 });
-    const eyeBrownMat = new THREE.MeshStandardMaterial({ color: 0x27170a, roughness: 0.35 });
+    const ribbonRedMat = new THREE.MeshStandardMaterial({ color: 0xef4444, ...vinylMat });
+    const bellGoldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.22 });
+    const eyeBrownMat = new THREE.MeshStandardMaterial({ color: 0x27170a, roughness: 0.22 });
     const glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const blushMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.55 });
 
     this.charTorso = new THREE.Group();
 
-    // Tronco peludinho e rechonchudo em formato de pera
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.46, 20, 20), caramelMat);
+    // Tronco Chibi diminuto em vinil caramelo
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 24), caramelMat);
     body.scale.set(0.96, 1.04, 0.94);
-    body.position.y = 0.60;
+    body.position.y = 0.44;
     body.castShadow = true;
     this.charTorso.add(body);
 
-    // Peitoral farto e peludo branco estilo Isabelle
-    const chestFur = new THREE.Mesh(new THREE.SphereGeometry(0.40, 18, 18), whiteFurMat);
-    chestFur.position.set(0, 0.62, 0.22);
-    chestFur.scale.set(0.88, 0.94, 0.62);
+    // Peitoral branco de vinil
+    const chestFur = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 20), whiteFurMat);
+    chestFur.position.set(0, 0.43, 0.14);
+    chestFur.scale.set(0.88, 0.94, 0.60);
     this.charTorso.add(chestFur);
 
-    // Cabeça Chibi felpuda e redondinha
+    // Cabeça CHIBI MASSIVA E PERFEITAMENTE ESFÉRICA
     this.charHead = new THREE.Group();
-    this.charHead.position.y = 1.18;
+    this.charHead.position.y = 0.96;
 
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.45, 24, 24), caramelMat);
-    headMesh.scale.set(1.10, 0.98, 1.05);
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.56, 32, 32), caramelMat);
     headMesh.castShadow = true;
     this.charHead.add(headMesh);
 
-    // Topete clássico amarrado no topo com laço vermelho e sininho dourado
-    const topKnot = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), caramelMat);
+    // Topete arredondado com laço vermelho e sininho dourado
+    const topKnot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16), caramelMat);
     topKnot.scale.set(0.9, 1.25, 0.9);
-    topKnot.position.set(0, 0.44, 0.05);
+    topKnot.position.set(0, 0.54, 0.05);
 
-    // Lacinho vermelho com sino dourado
-    const bowCenter = new THREE.Mesh(new THREE.SphereGeometry(0.048, 8, 8), bellGoldMat);
-    bowCenter.position.set(0, 0.40, 0.14);
+    const bowCenter = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 10), bellGoldMat);
+    bowCenter.position.set(0, 0.50, 0.16);
 
-    const bowWingL = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.11, 5), ribbonRedMat);
+    const bowWingL = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.13, 8), ribbonRedMat);
     bowWingL.rotation.z = Math.PI / 2;
-    bowWingL.position.set(-0.075, 0.40, 0.14);
+    bowWingL.position.set(-0.09, 0.50, 0.16);
 
-    const bowWingR = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.11, 5), ribbonRedMat);
+    const bowWingR = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.13, 8), ribbonRedMat);
     bowWingR.rotation.z = -Math.PI / 2;
-    bowWingR.position.set(0.075, 0.40, 0.14);
+    bowWingR.position.set(0.09, 0.50, 0.16);
 
     this.charHead.add(topKnot, bowCenter, bowWingL, bowWingR);
 
-    // Focinho branco arredondado fofo de pelúcia
-    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 16), whiteFurMat);
+    // Focinho branco arredondado de vinil
+    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 20), whiteFurMat);
     snout.scale.set(1.10, 0.78, 0.72);
-    snout.position.set(0, -0.05, 0.32);
+    snout.position.set(0, -0.06, 0.42);
     this.charHead.add(snout);
 
-    // Narizinho botão preto de coração/oval
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.058, 8, 8), noseBlackMat);
+    // Narizinho botão preto de vinil
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 10), noseBlackMat);
     nose.scale.set(1.1, 0.9, 0.7);
-    nose.position.set(0, -0.01, 0.47);
+    nose.position.set(0, -0.02, 0.57);
     this.charHead.add(nose);
 
-    // Linguinha rosada de fora (expressão clássica 'mlep' fofíssima)
-    const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.024, 0.09), tonguePinkMat);
-    tongue.position.set(0, -0.10, 0.44);
+    // Linguinha rosada de fora
+    const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.024, 0.09), tonguePinkMat);
+    tongue.position.set(0, -0.11, 0.53);
     tongue.rotation.x = 0.28;
     this.charHead.add(tongue);
 
-    // Orelhas caídas fartas com pelos em camadas arredondadas
+    // Orelhas caídas fartas de vinil com curvatura suave contornando a cabeça gigante
     for (const side of [-1, 1]) {
       const earGroup = new THREE.Group();
-      const earMain = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.44, 10, 10), caramelMat);
-      earMain.position.y = -0.18;
+      const earMain = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 12, 12), caramelMat);
+      earMain.position.y = -0.20;
       earMain.scale.set(1.15, 1.0, 0.65);
 
-      const earFluff = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.36, 8, 8), whiteFurMat);
-      earFluff.position.set(0, -0.16, 0.04);
+      const earFluff = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.40, 10, 10), whiteFurMat);
+      earFluff.position.set(0, -0.18, 0.04);
       earFluff.scale.set(1.0, 0.95, 0.4);
 
       earGroup.add(earMain, earFluff);
-      earGroup.position.set(side * 0.38, 0.14, 0.06);
+      earGroup.position.set(side * 0.46, 0.16, 0.08);
       earGroup.rotation.set(0.14, 0, side * 0.22);
       this.charHead.add(earGroup);
 
-      // Olhos castanhos brilhantes e doces estilo Animal Crossing
-      const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 14), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      // Olhos expressivos de vinil
+      const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.105, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
       eyeWhite.scale.set(0.9, 1.1, 0.35);
-      eyeWhite.position.set(side * 0.16, 0.07, 0.36);
+      eyeWhite.position.set(side * 0.19, 0.08, 0.48);
 
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.072, 12, 12), eyeBrownMat);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 14), eyeBrownMat);
       eye.scale.set(0.9, 1.1, 0.3);
-      eye.position.set(side * 0.16, 0.07, 0.39);
+      eye.position.set(side * 0.19, 0.08, 0.51);
 
-      // Brilhos nos olhos grandes e expressivos
-      const glintBig = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), glintMat);
-      glintBig.position.set(side * 0.145, 0.105, 0.43);
-      const glintSmall = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), glintMat);
-      glintSmall.position.set(side * 0.175, 0.045, 0.43);
+      const glintBig = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), glintMat);
+      glintBig.position.set(side * 0.17, 0.12, 0.55);
 
-      // Bochechas rosadas circulares
-      const blush = new THREE.Mesh(new THREE.CircleGeometry(0.065, 16), blushMat);
-      blush.position.set(side * 0.29, -0.06, 0.35);
+      const glintSmall = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 6), glintMat);
+      glintSmall.position.set(side * 0.21, 0.05, 0.55);
+
+      const blush = new THREE.Mesh(new THREE.CircleGeometry(0.075, 16), blushMat);
+      blush.position.set(side * 0.35, -0.06, 0.44);
       blush.rotation.y = side * 0.45;
 
       this.charHead.add(eyeWhite, eye, glintBig, glintSmall, blush);
@@ -1573,67 +1568,71 @@ class SnowSlideTPSMasterEngine {
     this.charTorso.add(this.charHead);
     this.attachEquippedScarf(this.charTorso);
 
-    // Patinhas dianteiras felpudas curtinhas com meias brancas
-    const createAnimalCrossingDogArm = (side: number) => {
+    // Patinhas dianteiras curtinhas
+    const createVinylDogArm = (side: number) => {
       const armGroup = new THREE.Group();
-      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.36, 8, 8), caramelMat);
-      arm.position.y = -0.16;
+      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.22, 10, 10), caramelMat);
+      arm.position.y = -0.10;
       arm.castShadow = true;
 
-      const mitten = new THREE.Mesh(new THREE.SphereGeometry(0.092, 10, 10), whiteFurMat);
-      mitten.position.y = -0.32;
-      mitten.scale.set(1.05, 0.95, 1.1);
+      const pawTip = new THREE.Mesh(new THREE.SphereGeometry(0.072, 10, 10), whiteFurMat);
+      pawTip.position.y = -0.20;
 
-      armGroup.add(arm, mitten);
-      armGroup.position.set(side * 0.48, 0.60, 0.06);
-      armGroup.rotation.set(-0.12, 0, side * -0.32);
+      armGroup.add(arm, pawTip);
+      armGroup.position.set(side * 0.30, 0.47, 0.04);
+      armGroup.rotation.set(-0.1, 0, side * -0.32);
       return armGroup as any;
     };
 
-    this.charArmL = createAnimalCrossingDogArm(-1);
-    this.charArmR = createAnimalCrossingDogArm(1);
+    this.charArmL = createVinylDogArm(-1);
+    this.charArmR = createVinylDogArm(1);
 
     const handSnowball = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 })
+      new THREE.SphereGeometry(0.12, 10, 10),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 })
     );
-    handSnowball.position.set(0, -0.32, 0.10);
+    handSnowball.position.set(0, -0.22, 0.08);
     handSnowball.visible = false;
     this.charArmR.add(handSnowball);
 
     this.charTorso.add(this.charArmL, this.charArmR);
 
-    // Rabinho pom-pom exuberante enrolado nas costas
-    const tailGroup = new THREE.Group();
-    const tailPlume = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 12), whiteFurMat);
-    tailPlume.scale.set(0.9, 1.25, 1.1);
+    // Rabinho felpudo e curvo estilo Spitz/Shih Tzu
+    const dogTail = new THREE.Group();
+    const tailBase = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.35, 8), caramelMat);
+    tailBase.position.set(0, 0.16, -0.10);
+    tailBase.rotation.x = -0.6;
 
-    const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.16, 5), caramelMat);
-    tailTip.position.set(0, 0.14, -0.05);
-    tailTip.rotation.x = -0.4;
+    const tailPuff = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), whiteFurMat);
+    tailPuff.position.set(0, 0.30, -0.20);
 
-    tailGroup.add(tailPlume, tailTip);
-    tailGroup.position.set(0, 0.68, -0.40);
-    this.charTail = tailGroup;
-    this.charTorso.add(tailGroup);
+    dogTail.add(tailBase, tailPuff);
+    dogTail.position.set(0, 0.36, -0.24);
+    this.charTail = dogTail;
+    this.charTorso.add(dogTail);
 
     root.add(this.charTorso);
 
-    // Patas traseiras curtinhas brancas
-    const createAnimalCrossingDogFoot = (posX: number) => {
+    // Patinhas traseiras arredondadas
+    const createVinylDogFoot = (posX: number) => {
       const foot = new THREE.Group();
-      const footMesh = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.08, 0.32), whiteFurMat);
-      footMesh.position.set(0, 0.04, 0.08);
+      const footMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 12, 12), caramelMat);
+      footMesh.rotation.x = Math.PI / 2;
+      footMesh.position.set(0, 0.04, 0.06);
       footMesh.castShadow = true;
       foot.add(footMesh);
 
+      const toePuff = new THREE.Mesh(new THREE.SphereGeometry(0.040, 8, 8), whiteFurMat);
+      toePuff.position.set(0, 0.035, 0.16);
+      foot.add(toePuff);
+
       foot.position.set(posX, 0.02, 0.02);
-      foot.rotation.y = posX < 0 ? -0.16 : 0.16;
+      foot.rotation.y = posX < 0 ? -0.14 : 0.14;
       return foot as any;
     };
 
-    this.charFootL = createAnimalCrossingDogFoot(-0.21);
-    this.charFootR = createAnimalCrossingDogFoot(0.21);
+    this.charFootL = createVinylDogFoot(-0.16);
+    this.charFootR = createVinylDogFoot(0.16);
     root.add(this.charFootL, this.charFootR);
 
     const rig: CharacterRig = {
@@ -1653,50 +1652,50 @@ class SnowSlideTPSMasterEngine {
     return root;
   }
 
-  // Anexar Chapéu Equipado
+  // Anexar Chapéu Equipado (Escalado para a Cabeça Chibi Esférica de Vinil)
   private attachEquippedHat(head: THREE.Group) {
     const hatId = this.equipped.hat;
     if (hatId === 'hat_red' || hatId === 'hat_blue') {
       const isRed = hatId === 'hat_red';
-      const hatMat = new THREE.MeshStandardMaterial({ color: isRed ? 0xdc2626 : 0x0284c7, roughness: 0.6 });
-      const brimMat = new THREE.MeshStandardMaterial({ color: isRed ? 0xb91c1c : 0x0369a1, roughness: 0.8 });
-      const pomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+      const hatMat = new THREE.MeshStandardMaterial({ color: isRed ? 0xdc2626 : 0x0284c7, roughness: 0.35 });
+      const brimMat = new THREE.MeshStandardMaterial({ color: isRed ? 0xb91c1c : 0x0369a1, roughness: 0.40 });
+      const pomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 });
 
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), hatMat);
-      dome.position.y = 0.13;
-      const brim = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.07, 8, 20), brimMat);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.57, 24, 24, 0, Math.PI * 2, 0, Math.PI * 0.52), hatMat);
+      dome.position.y = 0.18;
+      const brim = new THREE.Mesh(new THREE.TorusGeometry(0.54, 0.09, 10, 28), brimMat);
       brim.rotation.x = Math.PI / 2;
-      brim.position.y = 0.14;
-      const pom = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), pomMat);
-      pom.position.set(0, 0.54, -0.06);
+      brim.position.y = 0.18;
+      const pom = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 12), pomMat);
+      pom.position.set(0, 0.74, -0.08);
       head.add(dome, brim, pom);
 
     } else if (hatId === 'hat_top') {
-      const hatMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
-      const ribbonMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+      const hatMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35 });
+      const ribbonMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.30 });
 
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.04, 16), hatMat);
-      brim.position.y = 0.34;
-      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.48, 16), hatMat);
-      crown.position.y = 0.58;
-      const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.345, 0.345, 0.10, 16), ribbonMat);
-      ribbon.position.y = 0.41;
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.70, 0.70, 0.05, 24), hatMat);
+      brim.position.y = 0.46;
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.45, 0.58, 24), hatMat);
+      crown.position.y = 0.76;
+      const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.455, 0.455, 0.12, 24), ribbonMat);
+      ribbon.position.y = 0.54;
       head.add(brim, crown, ribbon);
 
     } else if (hatId === 'hat_crown') {
-      const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.25 });
-      const gemMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.1 });
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.22 });
+      const gemMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.10 });
 
-      const circlet = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.38, 0.18, 16, 1, true), goldMat);
-      circlet.position.y = 0.38;
+      const circlet = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.55, 0.20, 24, 1, true), goldMat);
+      circlet.position.y = 0.48;
       head.add(circlet);
 
       for (let i = 0; i < 5; i++) {
         const ang = (i / 5) * Math.PI * 2;
-        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 5), goldMat);
-        spike.position.set(Math.cos(ang) * 0.36, 0.54, Math.sin(ang) * 0.36);
-        const gem = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), gemMat);
-        gem.position.set(Math.cos(ang) * 0.38, 0.42, Math.sin(ang) * 0.38);
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.10, 0.26, 8), goldMat);
+        spike.position.set(Math.cos(ang) * 0.52, 0.68, Math.sin(ang) * 0.52);
+        const gem = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), gemMat);
+        gem.position.set(Math.cos(ang) * 0.54, 0.54, Math.sin(ang) * 0.54);
         head.add(spike, gem);
       }
     }
@@ -1708,17 +1707,17 @@ class SnowSlideTPSMasterEngine {
     if (gId === 'goggles_none') return;
 
     const lensColor = gId === 'goggles_orange' ? 0xf97316 : 0x38bdf8;
-    const lensMat = new THREE.MeshStandardMaterial({ color: lensColor, metalness: 0.7, roughness: 0.2, transparent: true, opacity: 0.88 });
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.6 });
-    const strapMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+    const lensMat = new THREE.MeshStandardMaterial({ color: lensColor, metalness: 0.7, roughness: 0.15, transparent: true, opacity: 0.88 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35 });
+    const strapMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.50 });
 
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.16, 0.12), lensMat);
-    visor.position.set(0, 0.08, 0.35);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.18, 0.14), lensMat);
+    visor.position.set(0, 0.08, 0.52);
 
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.20, 0.06), frameMat);
-    frame.position.set(0, 0.08, 0.33);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.22, 0.07), frameMat);
+    frame.position.set(0, 0.08, 0.50);
 
-    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.04, 6, 20), strapMat);
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 28), strapMat);
     strap.rotation.x = Math.PI / 2;
     strap.position.y = 0.08;
 
@@ -1729,14 +1728,14 @@ class SnowSlideTPSMasterEngine {
   private attachEquippedScarf(torso: THREE.Group) {
     const sId = this.equipped.scarf;
     const color = sId === 'scarf_green' ? 0x16a34a : (sId === 'scarf_red' ? 0xdc2626 : 0xfacc15);
-    const scarfMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+    const scarfMat = new THREE.MeshStandardMaterial({ color, roughness: 0.45 });
 
-    const scarfRing = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.09, 8, 20), scarfMat);
+    const scarfRing = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.08, 10, 24), scarfMat);
     scarfRing.rotation.x = Math.PI / 2;
-    scarfRing.position.y = 0.98;
+    scarfRing.position.y = 0.68;
 
-    this.charScarfTail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.55), scarfMat);
-    this.charScarfTail.position.set(0.26, 0.94, -0.38);
+    this.charScarfTail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 0.45), scarfMat);
+    this.charScarfTail.position.set(0.20, 0.64, -0.28);
     this.charScarfTail.rotation.set(-0.35, 0.25, 0);
 
     torso.add(scarfRing, this.charScarfTail);
@@ -2052,8 +2051,8 @@ class SnowSlideTPSMasterEngine {
     if (!rig.footL || !rig.footR || !rig.torso) return;
 
     if (isSitting) {
-      rig.footL.position.set(-0.20, 0.05, 0.38);
-      rig.footR.position.set(0.20, 0.05, 0.38);
+      rig.footL.position.set(-0.16, 0.05, 0.32);
+      rig.footR.position.set(0.16, 0.05, 0.32);
       rig.footL.rotation.set(0, -0.18, 0);
       rig.footR.rotation.set(0, 0.18, 0);
       rig.torso.rotation.set(0, 0, 0);
@@ -2071,8 +2070,8 @@ class SnowSlideTPSMasterEngine {
     const isThrowing = throwTimer > 0;
     const isChargingThrow = isCharging && !isThrowing;
 
-    rig.footL.position.set(-0.22, 0.04, 0.08);
-    rig.footR.position.set(0.22, 0.04, 0.08);
+    rig.footL.position.set(-0.16, 0.04, 0.08);
+    rig.footR.position.set(0.16, 0.04, 0.08);
     rig.footL.rotation.set(0, -0.18, 0);
     rig.footR.rotation.set(0, 0.18, 0);
 
