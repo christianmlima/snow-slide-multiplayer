@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import { GameState } from '@snow-slide/shared';
 
-const GAME_VERSION = "v2.0.0-STABLE";
+const GAME_VERSION = "v2.1.0-STABLE";
 
 type CharacterId = 'penguin' | 'frog' | 'cat' | 'dog';
 
@@ -32,6 +32,39 @@ interface BoxCollider {
 }
 
 type HubCollider = CircleCollider | BoxCollider;
+
+interface WanderingNPC {
+  mesh: THREE.Group;
+  name: string;
+  type: CharacterId;
+  waypoints: { x: number; z: number }[];
+  wpIndex: number;
+  speed: number;
+  walkTime: number;
+  footL: THREE.Mesh;
+  footR: THREE.Mesh;
+  torso: THREE.Group;
+  armL: THREE.Mesh;
+  armR: THREE.Mesh;
+  tail: THREE.Mesh | null;
+  state: 'walking' | 'idle' | 'hit';
+  reactionTimer: number;
+  yVel: number;
+}
+
+interface BenchSpot {
+  x: number;
+  z: number;
+  rotY: number;
+}
+
+interface ActiveSnowball {
+  mesh: THREE.Mesh;
+  vx: number;
+  vy: number;
+  vz: number;
+  life: number;
+}
 
 const SHOP_CATALOG: ShopItem[] = [
   // Veículos (Exclusivo Garagem Alpina)
@@ -74,6 +107,16 @@ class SnowSlideTPSMasterEngine {
   private playerVelZ = 0;
   private isJumping = false;
   private jumpVelY = 0;
+
+  // Sistema de Sentar em Bancos
+  private isSitting = false;
+  private currentBench: BenchSpot | null = null;
+  private benches: BenchSpot[] = [];
+  private nearBench: BenchSpot | null = null;
+
+  // Sistema de Bolas de Neve
+  private snowballs: ActiveSnowball[] = [];
+  private lastSnowballTime = 0;
   
   // Customizações e Equipamentos
   private currency = 1250;
@@ -122,7 +165,7 @@ class SnowSlideTPSMasterEngine {
   private phoneBoothPos = new THREE.Vector3(8, 0, -4);
   private cableCarStationPos = new THREE.Vector3(22, 0, -18);
 
-  // Membros do Personagem para Animação Procedural
+  // Membros do Personagem do Jogador para Animação Procedural
   private charTorso!: THREE.Group;
   private charHead!: THREE.Group;
   private charFootL!: THREE.Mesh;
@@ -134,10 +177,13 @@ class SnowSlideTPSMasterEngine {
   private walkTime = 0;
   private isRunning = false;
 
-  // NPCs Vendedores
+  // NPCs Vendedores Estacionários
   private npcRalph: THREE.Group | null = null;
   private npcBabette: THREE.Group | null = null;
   private npcBoris: THREE.Group | null = null;
+
+  // NPCs Autônomos Circulando pelo Vilarejo
+  private wanderingNPCs: WanderingNPC[] = [];
 
   // Bondinho
   private gondolaMesh!: THREE.Group;
@@ -322,6 +368,17 @@ class SnowSlideTPSMasterEngine {
     setTimeout(() => this.playTone(1318.51, 'sine', 0.18, 0.2), 70);
   }
 
+  private playSnowThrowSound() {
+    if (!this.soundEnabled) return;
+    this.playTone(480, 'sine', 0.08, 0.15);
+  }
+
+  private playSnowSplatSound() {
+    if (!this.soundEnabled) return;
+    this.playTone(180, 'triangle', 0.12, 0.25);
+    setTimeout(() => this.playTone(90, 'sine', 0.14, 0.2), 30);
+  }
+
   // =========================================================================
   // SISTEMA DE NOTIFICAÇÃO TOAST ELEGANTE (SUBSTITUI OS ALERTAS NATIVOS)
   // =========================================================================
@@ -383,17 +440,21 @@ class SnowSlideTPSMasterEngine {
     this.scene.add(this.snowSprayPoints);
   }
 
-  private emitSnowSpray(count: number, lateralBoost = 0) {
+  private emitSnowSpray(count: number, lateralBoost = 0, originX?: number, originY?: number, originZ?: number) {
     if (!this.snowSprayPoints) return;
     let emitted = 0;
+    const ox = originX !== undefined ? originX : this.playerPosX;
+    const oy = originY !== undefined ? originY : this.playerPosY;
+    const oz = originZ !== undefined ? originZ : this.playerPosZ;
+
     for (let i = 0; i < this.sprayData.length && emitted < count; i++) {
       const p = this.sprayData[i];
       if (p.life <= 0) {
-        p.x = this.playerPosX + (Math.random() - 0.5) * 0.45;
-        p.y = this.playerPosY + 0.08 + Math.random() * 0.12;
-        p.z = this.playerPosZ - 0.95;
-        p.vx = -lateralBoost * 0.35 + (Math.random() - 0.5) * 0.06;
-        p.vy = 0.07 + Math.random() * 0.09;
+        p.x = ox + (Math.random() - 0.5) * 0.45;
+        p.y = oy + 0.08 + Math.random() * 0.12;
+        p.z = oz - 0.95;
+        p.vx = -lateralBoost * 0.35 + (Math.random() - 0.5) * 0.08;
+        p.vy = 0.07 + Math.random() * 0.12;
         p.vz = -0.12 - Math.random() * 0.14;
         p.life = 1;
         p.maxLife = 16 + Math.floor(Math.random() * 12);
@@ -1020,7 +1081,6 @@ class SnowSlideTPSMasterEngine {
       });
       const ropeMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.8 });
 
-      // Lâminas de aço
       for (const side of [-0.46, 0.46]) {
         const runner = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 2.6), steelMat);
         runner.position.set(side, 0.05, 0);
@@ -1038,7 +1098,6 @@ class SnowSlideTPSMasterEngine {
         }
       }
 
-      // Tábuas de madeira
       for (const px of [-0.34, -0.11, 0.11, 0.34]) {
         const plank = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.05, 2.25), woodMat);
         plank.position.set(px, 0.29, -0.05);
@@ -1066,7 +1125,6 @@ class SnowSlideTPSMasterEngine {
       group.add(handleBar, ropeL, ropeR);
 
     } else {
-      // Snowboard
       const isLava = vType === 'board_lava';
       const boardMat = new THREE.MeshStandardMaterial({
         color: isLava ? 0x0f172a : 0x0284c7,
@@ -1156,29 +1214,24 @@ class SnowSlideTPSMasterEngine {
     const freq = running ? 1.6 : 1.0;
     const t = time * freq;
 
-    // Patas alternando passos
     this.charFootL.position.z = Math.sin(t) * 0.24;
     this.charFootL.position.y = Math.max(0, Math.cos(t) * 0.14);
 
     this.charFootR.position.z = -Math.sin(t) * 0.24;
     this.charFootR.position.y = Math.max(0, -Math.cos(t) * 0.14);
 
-    // Balanço de tronco alegre
     this.charTorso.rotation.z = Math.sin(t) * (running ? 0.20 : 0.14);
     this.charTorso.position.y = Math.abs(Math.sin(t * 2)) * 0.05;
 
-    // Braços / Nadadeiras articulando
     if (this.charArmL && this.charArmR) {
       this.charArmL.rotation.z = 0.42 + Math.sin(t) * 0.25;
       this.charArmR.rotation.z = -0.42 + Math.sin(t) * 0.25;
     }
 
-    // Cauda felina ou canina abanando alegremente
     if (this.charTail) {
       this.charTail.rotation.y = Math.sin(t * 1.8) * 0.35;
     }
 
-    // Cauda do cachecol
     if (this.charScarfTail) {
       this.charScarfTail.rotation.y = 0.25 + Math.sin(t * 1.5) * 0.25;
     }
@@ -1186,6 +1239,18 @@ class SnowSlideTPSMasterEngine {
 
   private animateCharacterIdle() {
     if (!this.charFootL || !this.charFootR || !this.charTorso) return;
+
+    if (this.isSitting) {
+      this.charFootL.position.set(-0.20, 0.05, 0.38);
+      this.charFootR.position.set(0.20, 0.05, 0.38);
+      this.charTorso.rotation.z = 0;
+      this.charTorso.position.y = -0.05;
+      if (this.charArmL && this.charArmR) {
+        this.charArmL.rotation.set(0.4, 0, 0.2);
+        this.charArmR.rotation.set(0.4, 0, -0.2);
+      }
+      return;
+    }
 
     this.charFootL.position.set(-0.22, 0.06, 0.12);
     this.charFootR.position.set(0.22, 0.06, 0.12);
@@ -1197,6 +1262,441 @@ class SnowSlideTPSMasterEngine {
     }
     if (this.charTail) {
       this.charTail.rotation.y = Math.sin(Date.now() * 0.002) * 0.15;
+    }
+  }
+
+  // =========================================================================
+  // PLACAS FÍSICAS 3D INFORMATIVAS (CANVAS TEXTURE EM ALTA RESOLUÇÃO)
+  // =========================================================================
+  private createTextSignboard(
+    x: number,
+    z: number,
+    rotY: number,
+    title: string,
+    subtitle: string,
+    accentHex: string = '#38bdf8'
+  ): THREE.Group {
+    const group = new THREE.Group();
+    
+    // Postes de madeira rústica
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.85 });
+    const post1 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 3.4, 8), woodMat);
+    post1.position.set(-2.0, 1.7, 0);
+    post1.castShadow = true;
+    const post2 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 3.4, 8), woodMat);
+    post2.position.set(2.0, 1.7, 0);
+    post2.castShadow = true;
+    group.add(post1, post2);
+
+    // Prancha de madeira base
+    const boardBack = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.8, 0.22), woodMat);
+    boardBack.position.set(0, 2.4, 0);
+    boardBack.castShadow = true;
+    group.add(boardBack);
+
+    // Neve acumulada no topo da placa
+    const snowCap = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.26, 0.28), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 }));
+    snowCap.position.set(0, 3.35, 0);
+    group.add(snowCap);
+
+    // Canvas com arte e texto em alta resolução
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 210;
+    const ctx = canvas.getContext('2d')!;
+
+    // Fundo ardósia escuro com bordas decoradas
+    ctx.fillStyle = '#090d16';
+    ctx.fillRect(0, 0, 512, 210);
+
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = accentHex;
+    ctx.strokeRect(6, 6, 500, 198);
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#ffffff';
+    ctx.strokeRect(15, 15, 482, 180);
+
+    // Título Principal em Destaque
+    ctx.textAlign = 'center';
+    ctx.fillStyle = accentHex;
+    ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    ctx.fillText(title, 256, 80);
+
+    // Subtítulo Explicativo
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 23px "Segoe UI", sans-serif';
+    ctx.fillText(subtitle, 256, 142);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const faceMat = new THREE.MeshBasicMaterial({ map: texture });
+    
+    // Frente da placa
+    const faceFront = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 1.7), faceMat);
+    faceFront.position.set(0, 2.4, 0.12);
+    group.add(faceFront);
+
+    // Verso da placa
+    const faceBack = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 1.7), faceMat);
+    faceBack.position.set(0, 2.4, -0.12);
+    faceBack.rotation.y = Math.PI;
+    group.add(faceBack);
+
+    group.position.set(x, 0, z);
+    group.rotation.y = rotY;
+
+    // Colisor para a placa
+    this.hubColliders.push({
+      type: 'box',
+      x,
+      z,
+      hw: 2.3,
+      hd: 0.35,
+      angle: rotY
+    });
+
+    return group;
+  }
+
+  // =========================================================================
+  // BANCOS DE MADEIRA ONDE É POSSÍVEL SENTAR
+  // =========================================================================
+  private createWoodenParkBench(x: number, z: number, rotY: number): THREE.Group {
+    const bench = new THREE.Group();
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 });
+    const ironMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
+
+    // Pés e suportes de ferro fundido escuro
+    for (const side of [-1.2, 1.2]) {
+      const leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.65, 0.8), ironMat);
+      leg1.position.set(side, 0.325, 0);
+      const armrest = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.8, 8), ironMat);
+      armrest.rotation.x = Math.PI / 2;
+      armrest.position.set(side, 0.75, 0);
+      const backPost = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.8, 0.08), ironMat);
+      backPost.position.set(side, 0.8, -0.38);
+      backPost.rotation.x = -0.15;
+      bench.add(leg1, armrest, backPost);
+    }
+
+    // Ripas de madeira do assento
+    for (let i = 0; i < 4; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.06, 0.16), woodMat);
+      slat.position.set(0, 0.65, -0.25 + i * 0.18);
+      slat.castShadow = true;
+      bench.add(slat);
+    }
+
+    // Ripas de madeira do encosto
+    for (let i = 0; i < 3; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.18, 0.05), woodMat);
+      slat.position.set(0, 0.95 + i * 0.22, -0.38);
+      slat.rotation.x = -0.15;
+      slat.castShadow = true;
+      bench.add(slat);
+    }
+
+    bench.position.set(x, 0, z);
+    bench.rotation.y = rotY;
+
+    // Registra ponto de sentar
+    this.benches.push({ x, z, rotY });
+
+    // Colisor do banco
+    this.hubColliders.push({
+      type: 'box',
+      x,
+      z,
+      hw: 1.45,
+      hd: 0.55,
+      angle: rotY
+    });
+
+    return bench;
+  }
+
+  // =========================================================================
+  // NPCS AUTÔNOMOS CIRCULANDO PELO VILAREJO (WANDERING NPCS)
+  // =========================================================================
+  private spawnWanderingNPCs() {
+    this.wanderingNPCs = [];
+
+    // 1. Pip - O Pinguim Explorador (com gorro azul e cachecol listrado)
+    const pip = this.createDetailedPenguin();
+    const pipWp = [
+      { x: -4, z: 4 },
+      { x: -12, z: 6 },
+      { x: -16, z: 12 },
+      { x: -8, z: 14 },
+      { x: -2, z: 8 },
+      { x: -4, z: 4 }
+    ];
+    pip.position.set(pipWp[0].x, 0, pipWp[0].z);
+    this.scene.add(pip);
+    this.wanderingNPCs.push({
+      mesh: pip,
+      name: 'Pip, o Pinguim',
+      type: 'penguin',
+      waypoints: pipWp,
+      wpIndex: 0,
+      speed: 0.045,
+      walkTime: Math.random() * 10,
+      footL: (pip.children[1] as THREE.Mesh),
+      footR: (pip.children[2] as THREE.Mesh),
+      torso: (pip.children[0] as THREE.Group),
+      armL: (pip.children[0] as THREE.Group).children[3] as THREE.Mesh,
+      armR: (pip.children[0] as THREE.Group).children[4] as THREE.Mesh,
+      tail: null,
+      state: 'walking',
+      reactionTimer: 0,
+      yVel: 0
+    });
+
+    // 2. Kero - O Sapo das Neves (Sapo Cururu Verde saltitante)
+    const kero = this.createDetailedFrog();
+    const keroWp = [
+      { x: -10, z: -8 },
+      { x: -4, z: -14 },
+      { x: 4, z: -12 },
+      { x: 2, z: -4 },
+      { x: -6, z: -2 },
+      { x: -10, z: -8 }
+    ];
+    kero.position.set(keroWp[0].x, 0, keroWp[0].z);
+    this.scene.add(kero);
+    this.wanderingNPCs.push({
+      mesh: kero,
+      name: 'Kero, o Sapo',
+      type: 'frog',
+      waypoints: keroWp,
+      wpIndex: 0,
+      speed: 0.05,
+      walkTime: Math.random() * 10,
+      footL: (kero.children[1] as THREE.Mesh),
+      footR: (kero.children[2] as THREE.Mesh),
+      torso: (kero.children[0] as THREE.Group),
+      armL: (kero.children[0] as THREE.Group).children[3] as THREE.Mesh,
+      armR: (kero.children[0] as THREE.Group).children[4] as THREE.Mesh,
+      tail: null,
+      state: 'walking',
+      reactionTimer: 0,
+      yVel: 0
+    });
+
+    // 3. Mimi - A Gatinha Siamesa Elegante
+    const mimi = this.createDetailedCat();
+    const mimiWp = [
+      { x: 14, z: 8 },
+      { x: 8, z: 12 },
+      { x: 2, z: 10 },
+      { x: 6, z: 2 },
+      { x: 14, z: 2 },
+      { x: 14, z: 8 }
+    ];
+    mimi.position.set(mimiWp[0].x, 0, mimiWp[0].z);
+    this.scene.add(mimi);
+    this.wanderingNPCs.push({
+      mesh: mimi,
+      name: 'Mimi, a Gatinha',
+      type: 'cat',
+      waypoints: mimiWp,
+      wpIndex: 0,
+      speed: 0.042,
+      walkTime: Math.random() * 10,
+      footL: (mimi.children[1] as THREE.Mesh),
+      footR: (mimi.children[2] as THREE.Mesh),
+      torso: (mimi.children[0] as THREE.Group),
+      armL: (mimi.children[0] as THREE.Group).children[3] as THREE.Mesh,
+      armR: (mimi.children[0] as THREE.Group).children[4] as THREE.Mesh,
+      tail: (mimi.children[0] as THREE.Group).children[5] as THREE.Mesh,
+      state: 'walking',
+      reactionTimer: 0,
+      yVel: 0
+    });
+
+    // 4. Toby - O Cachorrinho Shih Tzu Aventureiro
+    const toby = this.createDetailedDog();
+    const tobyWp = [
+      { x: 12, z: -6 },
+      { x: 18, z: -4 },
+      { x: 18, z: 4 },
+      { x: 10, z: 0 },
+      { x: 12, z: -6 }
+    ];
+    toby.position.set(tobyWp[0].x, 0, tobyWp[0].z);
+    this.scene.add(toby);
+    this.wanderingNPCs.push({
+      mesh: toby,
+      name: 'Toby, o Shih Tzu',
+      type: 'dog',
+      waypoints: tobyWp,
+      wpIndex: 0,
+      speed: 0.055,
+      walkTime: Math.random() * 10,
+      footL: (toby.children[1] as THREE.Mesh),
+      footR: (toby.children[2] as THREE.Mesh),
+      torso: (toby.children[0] as THREE.Group),
+      armL: (toby.children[0] as THREE.Group).children[3] as THREE.Mesh,
+      armR: (toby.children[0] as THREE.Group).children[4] as THREE.Mesh,
+      tail: (toby.children[0] as THREE.Group).children[5] as THREE.Mesh,
+      state: 'walking',
+      reactionTimer: 0,
+      yVel: 0
+    });
+  }
+
+  private updateWanderingNPCs() {
+    for (const npc of this.wanderingNPCs) {
+      if (npc.state === 'hit') {
+        npc.reactionTimer--;
+        npc.mesh.position.y += npc.yVel;
+        npc.yVel -= 0.02;
+        npc.mesh.rotation.y += 0.18;
+        if (npc.mesh.position.y <= 0) {
+          npc.mesh.position.y = 0;
+          npc.yVel = 0;
+        }
+        if (npc.reactionTimer <= 0) {
+          npc.state = 'walking';
+        }
+        continue;
+      }
+
+      const targetWp = npc.waypoints[npc.wpIndex];
+      const dx = targetWp.x - npc.mesh.position.x;
+      const dz = targetWp.z - npc.mesh.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < 0.8) {
+        npc.wpIndex = (npc.wpIndex + 1) % npc.waypoints.length;
+      } else {
+        const moveX = (dx / dist) * npc.speed;
+        const moveZ = (dz / dist) * npc.speed;
+
+        npc.mesh.position.x += moveX;
+        npc.mesh.position.z += moveZ;
+
+        const targetRotY = Math.atan2(moveX, moveZ);
+        let diffRot = targetRotY - npc.mesh.rotation.y;
+        while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+        while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+        npc.mesh.rotation.y += diffRot * 0.15;
+
+        npc.walkTime += 0.18;
+        const t = npc.walkTime;
+
+        if (npc.footL && npc.footR) {
+          npc.footL.position.z = Math.sin(t) * 0.22;
+          npc.footL.position.y = Math.max(0, Math.cos(t) * 0.12);
+          npc.footR.position.z = -Math.sin(t) * 0.22;
+          npc.footR.position.y = Math.max(0, -Math.cos(t) * 0.12);
+        }
+
+        if (npc.torso) {
+          npc.torso.rotation.z = Math.sin(t) * 0.12;
+          npc.torso.position.y = Math.abs(Math.sin(t * 2)) * 0.04;
+        }
+
+        if (npc.armL && npc.armR) {
+          npc.armL.rotation.z = 0.38 + Math.sin(t) * 0.22;
+          npc.armR.rotation.z = -0.38 + Math.sin(t) * 0.22;
+        }
+
+        if (npc.tail) {
+          npc.tail.rotation.y = Math.sin(t * 1.8) * 0.32;
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // ARREMESSO DE BOLAS DE NEVE COM O BOTÃO ESQUERDO DO MOUSE
+  // =========================================================================
+  private throwSnowball() {
+    if (this.currentScene !== 'HUB') return;
+    if (this.isAnyModalOpen()) return;
+
+    const now = Date.now();
+    if (now - this.lastSnowballTime < 240) return;
+    this.lastSnowballTime = now;
+
+    // Direção da mira da câmera
+    const cosPitch = Math.cos(this.cameraAngleX);
+    const sinPitch = Math.sin(this.cameraAngleX);
+    const sinYaw = Math.sin(this.cameraAngleY);
+    const cosYaw = Math.cos(this.cameraAngleY);
+
+    const speed = 1.35;
+    const vx = -sinYaw * cosPitch * speed;
+    const vy = Math.max(0.06, -sinPitch * speed + 0.24);
+    const vz = -cosYaw * cosPitch * speed;
+
+    const snowballGeo = new THREE.SphereGeometry(0.22, 10, 10);
+    const snowballMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 });
+    const mesh = new THREE.Mesh(snowballGeo, snowballMat);
+    mesh.position.set(this.playerPosX, this.playerPosY + 1.15, this.playerPosZ);
+    mesh.castShadow = true;
+    this.scene.add(mesh);
+
+    this.snowballs.push({ mesh, vx, vy, vz, life: 0 });
+    this.playSnowThrowSound();
+  }
+
+  private updateSnowballs() {
+    for (let i = this.snowballs.length - 1; i >= 0; i--) {
+      const sb = this.snowballs[i];
+      sb.mesh.position.x += sb.vx;
+      sb.mesh.position.y += sb.vy;
+      sb.mesh.position.z += sb.vz;
+      sb.vy -= 0.016; // Gravidade
+      sb.life++;
+
+      sb.mesh.rotation.x += 0.2;
+      sb.mesh.rotation.z += 0.2;
+
+      let splat = false;
+
+      // Colisão com o chão
+      if (sb.mesh.position.y <= 0.1) {
+        splat = true;
+      }
+
+      // Colisão com os NPCs que circulam
+      if (!splat) {
+        for (const npc of this.wanderingNPCs) {
+          const distNpc = sb.mesh.position.distanceTo(npc.mesh.position);
+          if (distNpc < 1.1) {
+            splat = true;
+            npc.state = 'hit';
+            npc.reactionTimer = 45;
+            npc.yVel = 0.22;
+            this.showToast(`Você acertou uma bola de neve no ${npc.name}! ❄️`, 'info');
+            break;
+          }
+        }
+      }
+
+      // Colisão com o Boneco de Neve
+      if (!splat) {
+        const distSnowman = sb.mesh.position.distanceTo(new THREE.Vector3(-12, 1.8, 8));
+        if (distSnowman < 1.6) {
+          splat = true;
+          this.showToast('Você acertou em cheio o Boneco de Neve! ⛄❄️', 'success');
+        }
+      }
+
+      // Tempo de vida máximo (120 frames)
+      if (sb.life > 120) {
+        splat = true;
+      }
+
+      if (splat) {
+        this.emitSnowSpray(10, 0, sb.mesh.position.x, sb.mesh.position.y, sb.mesh.position.z);
+        this.playSnowSplatSound();
+        this.scene.remove(sb.mesh);
+        this.snowballs.splice(i, 1);
+      }
     }
   }
 
@@ -1226,31 +1726,26 @@ class SnowSlideTPSMasterEngine {
     const wallHeight = 7.0;
     const doorWidth = 4.2;
 
-    // Piso de tábuas de madeira maciça
     const floor = new THREE.Mesh(new THREE.BoxGeometry(width - 0.4, 0.3, depth - 0.4), floorMat);
     floor.position.set(0, 0.15, 0);
     floor.receiveShadow = true;
     lodge.add(floor);
 
-    // Parede Traseira Sólida
     const backWall = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, wallThickness), woodMat);
     backWall.position.set(0, wallHeight * 0.5, -depth * 0.5 + wallThickness * 0.5);
     backWall.castShadow = true;
     lodge.add(backWall);
 
-    // Parede Lateral Esquerda
     const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, depth), woodMat);
     leftWall.position.set(-width * 0.5 + wallThickness * 0.5, wallHeight * 0.5, 0);
     leftWall.castShadow = true;
     lodge.add(leftWall);
 
-    // Parede Lateral Direita
     const rightWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, depth), woodMat);
     rightWall.position.set(width * 0.5 - wallThickness * 0.5, wallHeight * 0.5, 0);
     rightWall.castShadow = true;
     lodge.add(rightWall);
 
-    // Parede Frontal com Porta Aberta Central
     const frontSegmentWidth = (width - doorWidth) * 0.5;
     const frontLeft = new THREE.Mesh(new THREE.BoxGeometry(frontSegmentWidth, wallHeight, wallThickness), woodMat);
     frontLeft.position.set(-doorWidth * 0.5 - frontSegmentWidth * 0.5, wallHeight * 0.5, depth * 0.5 - wallThickness * 0.5);
@@ -1260,13 +1755,10 @@ class SnowSlideTPSMasterEngine {
     frontRight.position.set(doorWidth * 0.5 + frontSegmentWidth * 0.5, wallHeight * 0.5, depth * 0.5 - wallThickness * 0.5);
     frontRight.castShadow = true;
 
-    // Viga superior da porta
     const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, wallHeight - 4.5, wallThickness), woodMat);
     lintel.position.set(0, wallHeight - (wallHeight - 4.5) * 0.5, depth * 0.5 - wallThickness * 0.5);
-
     lodge.add(frontLeft, frontRight, lintel);
 
-    // Telhado Alpino Inclinado com Neve Acumulada
     const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * 0.78, 5.2, 4), roofMat);
     roof.position.y = wallHeight + 2.5;
     roof.rotation.y = Math.PI / 4;
@@ -1277,67 +1769,51 @@ class SnowSlideTPSMasterEngine {
     snowCap.rotation.y = Math.PI / 4;
     lodge.add(roof, snowCap);
 
-    // Placa Luminosa da Fachada
-    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(7.2, 1.4, 0.25), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
-    signBoard.position.set(0, 5.2, depth * 0.5 + 0.15);
-    lodge.add(signBoard);
-
-    // Balcão Interior de Atendimento
     const counter = new THREE.Mesh(new THREE.BoxGeometry(5.4, 1.3, 1.2), counterMat);
     counter.position.set(0, 0.65, 0.5);
     counter.castShadow = true;
     lodge.add(counter);
 
-    // Lustre / Lanterna Interior Aconchegante
     const warmLight = new THREE.PointLight(0xfef08a, 1.6, 18);
     warmLight.position.set(0, 5.0, 0);
     lodge.add(warmLight);
 
-    // Decoração Específica de Cada Loja / Chalé
     if (shopType === 'garage') {
-      // Garagem: Pranchas na parede e ferramentas
       for (const side of [-1, 1]) {
         const wallBoard = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.2, 0.45), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
         wallBoard.position.set(side * (width * 0.5 - 0.7), 3.0, -1.0);
         wallBoard.rotation.z = side * 0.2;
         lodge.add(wallBoard);
       }
-      // Vendedor Ralph
       this.npcRalph = this.createMerchantRalph();
       this.npcRalph.position.set(0, 0.15, -1.5);
       lodge.add(this.npcRalph);
 
     } else if (shopType === 'hats') {
-      // Boutique: Tapete carmesim e manequins com gorro e coroa
       const carpet = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.05, depth - 2.0), new THREE.MeshStandardMaterial({ color: 0xb91c1c }));
       carpet.position.set(0, 0.22, 0);
       lodge.add(carpet);
 
-      // Manequim
       const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, 1.4, 8), new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8 }));
       stand.position.set(-3.2, 0.7, -1.2);
       const mHead = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 12), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
       mHead.position.set(-3.2, 1.6, -1.2);
       lodge.add(stand, mHead);
 
-      // Vendedora Babette
       this.npcBabette = this.createMerchantBabette();
       this.npcBabette.position.set(0, 0.15, -1.5);
       lodge.add(this.npcBabette);
 
     } else if (shopType === 'atelier') {
-      // Ateliê: Rolos de lã coloridos e mostruário de óculos neon
       const displayCase = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.1, 0.8), new THREE.MeshStandardMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 }));
       displayCase.position.set(-3.4, 0.55, 0.2);
       lodge.add(displayCase);
 
-      // Vendedor Boris
       this.npcBoris = this.createMerchantBoris();
       this.npcBoris.position.set(0, 0.15, -1.5);
       lodge.add(this.npcBoris);
 
     } else if (shopType === 'tavern') {
-      // Taverna dos Campeões: Grande Cartaz / Placar de Recordes na Parede do Fundo
       const posterBoard = new THREE.Mesh(new THREE.BoxGeometry(6.4, 3.2, 0.15), new THREE.MeshStandardMaterial({ color: 0x451a03 }));
       posterBoard.position.set(0, 3.6, -depth * 0.5 + 0.45);
       
@@ -1352,8 +1828,6 @@ class SnowSlideTPSMasterEngine {
 
     lodge.position.set(centerX, 0, centerZ);
 
-    // Registro de Colisores Sólidos com Porta Desobstruída
-    // Parede Traseira
     this.hubColliders.push({
       type: 'box',
       x: centerX,
@@ -1362,7 +1836,6 @@ class SnowSlideTPSMasterEngine {
       hd: wallThickness * 0.5,
       angle: 0
     });
-    // Parede Lateral Esquerda
     this.hubColliders.push({
       type: 'box',
       x: centerX - width * 0.5 + wallThickness * 0.5,
@@ -1371,7 +1844,6 @@ class SnowSlideTPSMasterEngine {
       hd: depth * 0.5,
       angle: 0
     });
-    // Parede Lateral Direita
     this.hubColliders.push({
       type: 'box',
       x: centerX + width * 0.5 - wallThickness * 0.5,
@@ -1380,7 +1852,6 @@ class SnowSlideTPSMasterEngine {
       hd: depth * 0.5,
       angle: 0
     });
-    // Parede Frontal Esquerda
     this.hubColliders.push({
       type: 'box',
       x: centerX - doorWidth * 0.5 - frontSegmentWidth * 0.5,
@@ -1389,7 +1860,6 @@ class SnowSlideTPSMasterEngine {
       hd: wallThickness * 0.5,
       angle: 0
     });
-    // Parede Frontal Direita
     this.hubColliders.push({
       type: 'box',
       x: centerX + doorWidth * 0.5 + frontSegmentWidth * 0.5,
@@ -1398,7 +1868,6 @@ class SnowSlideTPSMasterEngine {
       hd: wallThickness * 0.5,
       angle: 0
     });
-    // Balcão Interior Sólido
     this.hubColliders.push({
       type: 'box',
       x: centerX,
@@ -1411,7 +1880,6 @@ class SnowSlideTPSMasterEngine {
     return lodge;
   }
 
-  // Modelagem dos NPCs Lojistas
   private createMerchantRalph(): THREE.Group {
     const ralph = this.createDetailedPenguin();
     const cap = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.12, 0.6), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
@@ -1437,7 +1905,6 @@ class SnowSlideTPSMasterEngine {
     return boris;
   }
 
-  // Cabine Telefônica Clássica Vermelha (Cabine Mágica de Transformação)
   private createPhoneBooth(x: number, z: number): THREE.Group {
     const booth = new THREE.Group();
     const redMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
@@ -1449,12 +1916,10 @@ class SnowSlideTPSMasterEngine {
     const depth = 1.8;
     const height = 4.2;
 
-    // Base e Pilares da cabine
     const base = new THREE.Mesh(new THREE.BoxGeometry(width, 0.25, depth), redMat);
     base.position.y = 0.125;
     booth.add(base);
 
-    // 4 Pilares verticais nos cantos
     for (const px of [-width * 0.45, width * 0.45]) {
       for (const pz of [-depth * 0.45, depth * 0.45]) {
         const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.16, height, 0.16), redMat);
@@ -1463,7 +1928,6 @@ class SnowSlideTPSMasterEngine {
       }
     }
 
-    // Vidros em 3 lados (fundos, esquerda, direita)
     const glassBack = new THREE.Mesh(new THREE.PlaneGeometry(width * 0.8, height * 0.72), glassMat);
     glassBack.position.set(0, height * 0.5, -depth * 0.46);
     const glassLeft = new THREE.Mesh(new THREE.PlaneGeometry(depth * 0.8, height * 0.72), glassMat);
@@ -1475,17 +1939,14 @@ class SnowSlideTPSMasterEngine {
 
     booth.add(glassBack, glassLeft, glassRight);
 
-    // Cúpula / Telhado arredondado vermelho
     const dome = new THREE.Mesh(new THREE.SphereGeometry(width * 0.65, 12, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), roofMat);
     dome.position.y = height;
     booth.add(dome);
 
-    // Placa "TELEPHONE" no topo
     const sign = new THREE.Mesh(new THREE.BoxGeometry(width * 0.9, 0.35, depth * 0.9), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
     sign.position.y = height + 0.15;
     booth.add(sign);
 
-    // Telefone vintage fixado na parede traseira
     const phoneBox = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.6, 0.2), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
     phoneBox.position.set(0, 2.2, -depth * 0.4);
     const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.04, 12), goldMat);
@@ -1495,14 +1956,12 @@ class SnowSlideTPSMasterEngine {
     handset.position.set(-0.25, 2.2, -depth * 0.4 + 0.1);
     booth.add(phoneBox, dial, handset);
 
-    // Luz âmbar aconchegante interna
     const light = new THREE.PointLight(0xfef08a, 1.8, 6.0);
     light.position.set(0, height - 0.4, 0);
     booth.add(light);
 
     booth.position.set(x, 0, z);
 
-    // Colisor da cabine
     this.hubColliders.push({
       type: 'box',
       x,
@@ -1515,7 +1974,6 @@ class SnowSlideTPSMasterEngine {
     return booth;
   }
 
-  // Estação do Bondinho
   private createCableCarBaseStation(): THREE.Group {
     const station = new THREE.Group();
     const timberMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.8 });
@@ -1580,15 +2038,10 @@ class SnowSlideTPSMasterEngine {
     this.gondolaMesh.position.set(2.4, 3.8, -1);
     station.add(this.gondolaMesh);
 
-    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 0.2), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
-    signBoard.position.set(0, 5.8, 5.8);
-    station.add(signBoard);
-
     station.position.copy(this.cableCarStationPos);
     return station;
   }
 
-  // Fogueira Central
   private createBonfire(): THREE.Group {
     const group = new THREE.Group();
     const stoneMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
@@ -1640,7 +2093,6 @@ class SnowSlideTPSMasterEngine {
     return group;
   }
 
-  // Boneco de Neve
   private createSnowman(): THREE.Group {
     const snowman = new THREE.Group();
     const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 });
@@ -1679,7 +2131,6 @@ class SnowSlideTPSMasterEngine {
     return snowman;
   }
 
-  // Postes de Iluminação Alpina
   private createStreetLamp(x: number, z: number): THREE.Group {
     const lamp = new THREE.Group();
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7 });
@@ -1700,7 +2151,6 @@ class SnowSlideTPSMasterEngine {
     return lamp;
   }
 
-  // Pinheiros Nevados
   private createSnowyPineTree(): THREE.Group {
     const tree = new THREE.Group();
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
@@ -1731,7 +2181,6 @@ class SnowSlideTPSMasterEngine {
     return tree;
   }
 
-  // Cercas Rústicas
   private createRusticFence(x: number, z: number, rotY: number, length: number): THREE.Group {
     const fence = new THREE.Group();
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
@@ -1755,7 +2204,6 @@ class SnowSlideTPSMasterEngine {
     return fence;
   }
 
-  // Picos Montanhosos
   private createMountainPeak(radius: number, height: number): THREE.Mesh {
     const geo = new THREE.ConeGeometry(radius, height, 10);
     const mat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.95, flatShading: true });
@@ -1764,7 +2212,6 @@ class SnowSlideTPSMasterEngine {
     return mesh;
   }
 
-  // Rochas Nevadas
   private createSnowyRock(): THREE.Mesh {
     const geo = new THREE.DodecahedronGeometry(1.4, 1);
     const mat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9 });
@@ -1775,14 +2222,12 @@ class SnowSlideTPSMasterEngine {
     return rock;
   }
 
-  // Portais de Slalom com Arcos Iluminados
   private createSlalomGate(colorHex: number): THREE.Group {
     const group = new THREE.Group();
     const poleMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.3 });
     const archMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 });
     const lightMat = new THREE.MeshBasicMaterial({ color: colorHex });
 
-    // Pilares esquerdo e direito
     const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 4.2, 8), poleMat);
     p1.position.set(-3.0, 2.1, 0);
     p1.castShadow = true;
@@ -1791,16 +2236,13 @@ class SnowSlideTPSMasterEngine {
     p2.position.set(3.0, 2.1, 0);
     p2.castShadow = true;
 
-    // Arco superior curvo (Semi-Torus)
     const archGeo = new THREE.TorusGeometry(3.0, 0.12, 8, 18, Math.PI);
     const arch = new THREE.Mesh(archGeo, archMat);
     arch.position.set(0, 2.1, 0);
 
-    // Banner festivo
     const banner = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.8, 0.1), poleMat);
     banner.position.set(0, 3.8, 0);
 
-    // Luzes de Alvo nos postes
     const leftLight = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), lightMat.clone());
     leftLight.position.set(-3.0, 4.2, 0);
 
@@ -1814,7 +2256,6 @@ class SnowSlideTPSMasterEngine {
     return group;
   }
 
-  // Rampas de Salto
   private createSnowRamp(): THREE.Group {
     const group = new THREE.Group();
     const rampMat = new THREE.MeshStandardMaterial({ color: 0xe0f2fe, roughness: 0.7 });
@@ -1836,27 +2277,22 @@ class SnowSlideTPSMasterEngine {
     return group;
   }
 
-  // Grande Linha de Chegada da Montanha (Finish Line Arch)
   private createFinishLineArch(): THREE.Group {
     const finishArch = new THREE.Group();
     const timberMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.8 });
     const metalMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8 });
 
-    // Pilares mestres de madeira alpina
     const p1 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 9.5, 1.2), timberMat);
     p1.position.set(-22, 4.75, 0);
     const p2 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 9.5, 1.2), timberMat);
     p2.position.set(22, 4.75, 0);
 
-    // Viga superior com faixa xadrez
     const crossBar = new THREE.Mesh(new THREE.BoxGeometry(46, 1.8, 1.4), timberMat);
     crossBar.position.set(0, 9.2, 0);
 
-    // Faixa vermelha e dourada de chegada
     const banner = new THREE.Mesh(new THREE.BoxGeometry(42, 2.8, 0.3), new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x7f1d1d }));
     banner.position.set(0, 7.8, 0);
 
-    // Bandeiras de vitória tremulando
     for (const bx of [-15, -7, 0, 7, 15]) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.5), metalMat);
       pole.position.set(bx, 10.8, 0);
@@ -2000,6 +2436,10 @@ class SnowSlideTPSMasterEngine {
     this.createSnowSpraySystem();
     this.clearAllSkidMarks();
     this.confettiPoints = null;
+    this.snowballs = [];
+    this.isSitting = false;
+    this.currentBench = null;
+    this.benches = [];
 
     // Solo da Praça da Vila Alpina
     const groundGeo = new THREE.PlaneGeometry(350, 350, 32, 32);
@@ -2011,12 +2451,20 @@ class SnowSlideTPSMasterEngine {
 
     this.hubColliders = [];
 
-    // 1. Estação do Bondinho (Teleférico)
+    // 1. Estação do Bondinho (Teleférico com embarque para a Corrida)
     this.scene.add(this.createCableCarBaseStation());
     this.hubColliders.push({ type: 'box', x: 22, z: -20.5, hw: 8.5, hd: 4.2, angle: 0 });
     this.hubColliders.push({ type: 'box', x: 13.8, z: -15.5, hw: 0.8, hd: 2.8, angle: 0 });
     this.hubColliders.push({ type: 'box', x: 30.2, z: -15.5, hw: 0.8, hd: 2.8, angle: 0 });
     this.hubColliders.push({ type: 'circle', x: 22, z: -19, r: 1.2 });
+
+    // Placa 3D Informativa do Bondinho / Corrida de Descida
+    this.scene.add(this.createTextSignboard(
+      15, -12, 0.2,
+      '🚠 TELEFÉRICO DA MONTANHA',
+      '🏔️ EMBARQUE PARA A CORRIDA DE DESCIDA',
+      '#38bdf8'
+    ));
 
     // 2. Fogueira acolhedora central
     this.scene.add(this.createBonfire());
@@ -2026,10 +2474,16 @@ class SnowSlideTPSMasterEngine {
     this.scene.add(this.createSnowman());
     this.hubColliders.push({ type: 'circle', x: -12, z: 8, r: 1.4 });
 
-    // 4. Cabine Telefônica Mágica (Troca de Personagem)
+    // 4. Cabine Telefônica Mágica (Troca de Personagem) com Placa
     this.scene.add(this.createPhoneBooth(this.phoneBoothPos.x, this.phoneBoothPos.z));
+    this.scene.add(this.createTextSignboard(
+      11.5, -3.5, -Math.PI / 4,
+      '📞 CABINE MÁGICA',
+      '✨ METAMORFOSE DE PERSONAGEM',
+      '#ef4444'
+    ));
 
-    // 5. Chalé 1: Garagem Alpina (Trenós & Snowboards)
+    // 5. Chalé 1: Garagem Alpina (Trenós & Snowboards) com Placa Externa
     const garage = this.createWalkInLodge(
       this.garagePos.x,
       this.garagePos.z,
@@ -2041,8 +2495,14 @@ class SnowSlideTPSMasterEngine {
       'garage'
     );
     this.scene.add(garage);
+    this.scene.add(this.createTextSignboard(
+      -18, -12.5, -0.15,
+      '🛠️ GARAGEM ALPINA',
+      '🛷 TRENÓS & SNOWBOARDS VELOZES',
+      '#f59e0b'
+    ));
 
-    // 6. Chalé 2: Boutique dos Gorros (Chapéus & Coroas)
+    // 6. Chalé 2: Boutique dos Gorros (Chapéus & Coroas) com Placa Externa
     const hatShop = this.createWalkInLodge(
       this.hatShopPos.x,
       this.hatShopPos.z,
@@ -2054,8 +2514,14 @@ class SnowSlideTPSMasterEngine {
       'hats'
     );
     this.scene.add(hatShop);
+    this.scene.add(this.createTextSignboard(
+      -18, 12.5, 0.15,
+      '🎩 BOUTIQUE DOS GORROS',
+      '👑 GORROS, CARTOLAS & COROAS',
+      '#ec4899'
+    ));
 
-    // 7. Chalé 3: Ateliê da Montanha (Cachecóis & Óculos)
+    // 7. Chalé 3: Ateliê da Montanha (Cachecóis & Óculos) com Placa Externa
     const atelier = this.createWalkInLodge(
       this.atelierPos.x,
       this.atelierPos.z,
@@ -2067,8 +2533,14 @@ class SnowSlideTPSMasterEngine {
       'atelier'
     );
     this.scene.add(atelier);
+    this.scene.add(this.createTextSignboard(
+      6, 17.5, 0,
+      '🧣 ATELIÊ DA MONTANHA',
+      '🥽 CACHECÓIS MACIOS & ÓCULOS',
+      '#10b981'
+    ));
 
-    // 8. Chalé 4: Taverna dos Campeões (Salão de Recordes)
+    // 8. Chalé 4: Taverna dos Campeões (Salão de Recordes) com Placa Externa
     const tavern = this.createWalkInLodge(
       this.tavernPos.x,
       this.tavernPos.z,
@@ -2080,8 +2552,23 @@ class SnowSlideTPSMasterEngine {
       'tavern'
     );
     this.scene.add(tavern);
+    this.scene.add(this.createTextSignboard(
+      19, 13.5, -Math.PI * 0.15,
+      '🏆 TAVERNA DOS CAMPEÕES',
+      '🌟 SALÃO DE RECORDES & HALL DA FAMA',
+      '#eab308'
+    ));
 
-    // 9. Postes de iluminação da praça
+    // 9. Bancos de Madeira Rústicos na Praça (Onde é possível sentar)
+    this.scene.add(this.createWoodenParkBench(-2, 3.4, Math.PI)); // Em frente à fogueira
+    this.scene.add(this.createWoodenParkBench(-2, -3.4, 0)); // Ao sul da fogueira
+    this.scene.add(this.createWoodenParkBench(16, 8, -Math.PI / 2)); // Perto da taverna
+    this.scene.add(this.createWoodenParkBench(6, 2, Math.PI * 0.75)); // Perto da cabine
+
+    // 10. Spawn dos NPCs Autônomos Circulando pelo Vilarejo
+    this.spawnWanderingNPCs();
+
+    // 11. Postes de iluminação da praça
     const lampPositions = [
       [-6, 6],
       [12, 4],
@@ -2093,7 +2580,7 @@ class SnowSlideTPSMasterEngine {
       this.hubColliders.push({ type: 'circle', x: lx, z: lz, r: 0.5 });
     }
 
-    // 10. Pinheiros decorativos internos
+    // 12. Pinheiros decorativos internos
     const innerTrees = [
       [-16, -2],
       [-10, 18],
@@ -2109,7 +2596,7 @@ class SnowSlideTPSMasterEngine {
       this.hubColliders.push({ type: 'circle', x: tx, z: tz, r: 0.9 });
     }
 
-    // 11. Cercas delimitadoras da vila alpina
+    // 13. Cercas delimitadoras da vila alpina
     const fences = [
       { x: 0, z: -43, rot: 0, len: 38 },
       { x: 0, z: 43, rot: 0, len: 70 },
@@ -2120,7 +2607,7 @@ class SnowSlideTPSMasterEngine {
       this.scene.add(this.createRusticFence(f.x, f.z, f.rot, f.len));
     }
 
-    // 12. Montanhas no horizonte
+    // 14. Montanhas no horizonte
     for (let i = 0; i < 6; i++) {
       const ang = (i / 6) * Math.PI * 2;
       const p = this.createMountainPeak(55 + Math.random() * 20, 80 + Math.random() * 40);
@@ -2128,7 +2615,7 @@ class SnowSlideTPSMasterEngine {
       this.scene.add(p);
     }
 
-    // RESET TOTAL DO HUB
+    // RESET TOTAL DO JOGADOR NO HUB
     this.playerPosX = 0;
     this.playerPosZ = 0;
     this.playerPosY = 0;
@@ -2142,6 +2629,7 @@ class SnowSlideTPSMasterEngine {
     this.nearAtelier = false;
     this.nearRecords = false;
     this.nearPhoneBooth = false;
+    this.nearBench = null;
 
     this.keyW = false;
     this.keyS = false;
@@ -2156,7 +2644,11 @@ class SnowSlideTPSMasterEngine {
     document.getElementById('hub-ui')!.style.display = 'block';
     document.getElementById('racing-hud')!.style.display = 'none';
     document.getElementById('back-hub-btn')!.style.display = 'none';
-    document.getElementById('cable-car-cutscene')!.style.display = 'none';
+    
+    // CORREÇÃO CRÍTICA DO BUG: Remove tela de cutscene
+    const cutsceneEl = document.getElementById('cable-car-cutscene');
+    if (cutsceneEl) cutsceneEl.style.display = 'none';
+
     document.getElementById('joystick-ui')!.style.display = 'block';
     document.getElementById('run-btn')!.style.display = 'flex';
     document.getElementById('race-finish-modal')!.style.display = 'none';
@@ -2172,7 +2664,9 @@ class SnowSlideTPSMasterEngine {
       'hat-shop-prompt',
       'atelier-shop-prompt',
       'records-prompt',
-      'phone-booth-prompt'
+      'phone-booth-prompt',
+      'sit-bench-prompt',
+      'stand-up-prompt'
     ];
     for (const pid of prompts) {
       const el = document.getElementById(pid);
@@ -2187,7 +2681,14 @@ class SnowSlideTPSMasterEngine {
     this.gatesCleared = 0;
     this.raceStartTime = Date.now();
     this.confettiPoints = null;
+    this.snowballs = [];
+    this.isSitting = false;
+    this.currentBench = null;
     
+    // CORREÇÃO CRÍTICA DO BUG: Garante que a cutscene desaparece 100% ao iniciar a descida!
+    const cutsceneEl = document.getElementById('cable-car-cutscene');
+    if (cutsceneEl) cutsceneEl.style.display = 'none';
+
     // Atmosfera Alpina Imersiva
     this.scene.background = new THREE.Color(0xbdddf7);
     this.scene.fog = new THREE.FogExp2(0xcde3f7, 0.0035);
@@ -2367,6 +2868,7 @@ class SnowSlideTPSMasterEngine {
     this.playTone(392, 'sine', 0.5, 0.2);
 
     setTimeout(() => {
+      cutscene.style.display = 'none';
       this.loadRacingScene();
     }, 2000);
   }
@@ -2385,7 +2887,6 @@ class SnowSlideTPSMasterEngine {
     this.updateCoinsDisplay();
     this.saveSettings();
 
-    // Atualiza Recorde Pessoal
     try {
       const bestScore = parseInt(localStorage.getItem('snow_slide_best_score') || '0', 10);
       if (this.score > bestScore) {
@@ -2394,7 +2895,6 @@ class SnowSlideTPSMasterEngine {
       }
     } catch (e) {}
 
-    // Preenche Modal de Vitória
     const finishTimeVal = document.getElementById('finish-time-val');
     if (finishTimeVal) finishTimeVal.innerText = `${elapsedSeconds}s`;
 
@@ -2407,7 +2907,6 @@ class SnowSlideTPSMasterEngine {
     const finishCoinsVal = document.getElementById('finish-coins-val');
     if (finishCoinsVal) finishCoinsVal.innerText = `+${bonusCoins}`;
 
-    // Mostra Modal de Vitória
     const finishModal = document.getElementById('race-finish-modal');
     if (finishModal) {
       setTimeout(() => {
@@ -2623,7 +3122,6 @@ class SnowSlideTPSMasterEngine {
     }
     this.closeAllModals();
     
-    // Atualiza controles com estado atual
     const slider = document.getElementById('mouse-sens-slider') as HTMLInputElement;
     if (slider) slider.value = this.mouseSensMultiplier.toString();
 
@@ -2646,7 +3144,6 @@ class SnowSlideTPSMasterEngine {
     }
     this.closeAllModals();
 
-    // Destaca o personagem atualmente ativo
     document.querySelectorAll('.character-card').forEach(card => {
       const charId = card.getAttribute('data-char');
       const btn = card.querySelector('.item-btn') as HTMLElement;
@@ -2696,7 +3193,6 @@ class SnowSlideTPSMasterEngine {
     this.updateCoinsDisplay();
 
     const titleEl = document.getElementById('shop-modal-title');
-
     let initialCategory: 'sleds' | 'hats' | 'scarves' | 'goggles' = 'sleds';
 
     if (shopType === 'garage') {
@@ -2713,7 +3209,6 @@ class SnowSlideTPSMasterEngine {
       initialCategory = 'sleds';
     }
 
-    // Ativa a aba correta
     document.querySelectorAll('[data-shop-tab]').forEach(tabBtn => {
       const cat = tabBtn.getAttribute('data-shop-tab');
       if (cat === initialCategory) {
@@ -2753,7 +3248,6 @@ class SnowSlideTPSMasterEngine {
       this.loadHubScene();
     });
 
-    // Botões do Hub
     document.getElementById('open-inventory-btn')!.addEventListener('click', () => {
       this.toggleInventoryModal();
     });
@@ -2762,7 +3256,6 @@ class SnowSlideTPSMasterEngine {
       this.openSettingsModal();
     });
 
-    // Fechar modais
     document.getElementById('close-shop-btn')!.addEventListener('click', () => {
       document.getElementById('shop-modal')!.style.display = 'none';
     });
@@ -2783,7 +3276,6 @@ class SnowSlideTPSMasterEngine {
       document.getElementById('records-modal')!.style.display = 'none';
     });
 
-    // Ações do Modal de Vitória
     document.getElementById('retry-race-btn')!.addEventListener('click', () => {
       this.loadRacingScene();
     });
@@ -2792,7 +3284,6 @@ class SnowSlideTPSMasterEngine {
       this.loadHubScene();
     });
 
-    // Configurações: Slider de Sensibilidade
     const sensSlider = document.getElementById('mouse-sens-slider') as HTMLInputElement;
     if (sensSlider) {
       sensSlider.addEventListener('input', (e) => {
@@ -2803,7 +3294,6 @@ class SnowSlideTPSMasterEngine {
       });
     }
 
-    // Configurações: Invert Y
     const invertBox = document.getElementById('invert-y-toggle') as HTMLInputElement;
     if (invertBox) {
       invertBox.addEventListener('change', (e) => {
@@ -2812,7 +3302,6 @@ class SnowSlideTPSMasterEngine {
       });
     }
 
-    // Configurações: Som
     const soundBox = document.getElementById('sound-fx-toggle') as HTMLInputElement;
     if (soundBox) {
       soundBox.addEventListener('change', (e) => {
@@ -2821,7 +3310,6 @@ class SnowSlideTPSMasterEngine {
       });
     }
 
-    // Configurações: Restaurar Padrões
     const resetSettingsBtn = document.getElementById('reset-settings-btn');
     if (resetSettingsBtn) {
       resetSettingsBtn.addEventListener('click', () => {
@@ -2834,7 +3322,6 @@ class SnowSlideTPSMasterEngine {
       });
     }
 
-    // Seleção de Personagem na Cabine Telefônica
     document.querySelectorAll('[data-char]').forEach(card => {
       card.addEventListener('click', (e) => {
         const charId = (e.currentTarget as HTMLElement).getAttribute('data-char') as CharacterId;
@@ -2854,7 +3341,6 @@ class SnowSlideTPSMasterEngine {
       });
     });
 
-    // Abas da Loja
     document.querySelectorAll('[data-shop-tab]').forEach(tabBtn => {
       tabBtn.addEventListener('click', (e) => {
         document.querySelectorAll('[data-shop-tab]').forEach(b => b.classList.remove('active'));
@@ -2864,7 +3350,6 @@ class SnowSlideTPSMasterEngine {
       });
     });
 
-    // Abas do Inventário
     document.querySelectorAll('[data-inv-tab]').forEach(tabBtn => {
       tabBtn.addEventListener('click', (e) => {
         document.querySelectorAll('[data-inv-tab]').forEach(b => b.classList.remove('active'));
@@ -2874,13 +3359,14 @@ class SnowSlideTPSMasterEngine {
       });
     });
 
-    // Cliques nos Prompts Flutuantes
     document.getElementById('cable-car-prompt')?.addEventListener('click', () => this.startCableCarClimb());
     document.getElementById('garage-shop-prompt')?.addEventListener('click', () => this.openSegmentedShop('garage'));
     document.getElementById('hat-shop-prompt')?.addEventListener('click', () => this.openSegmentedShop('hats'));
     document.getElementById('atelier-shop-prompt')?.addEventListener('click', () => this.openSegmentedShop('atelier'));
     document.getElementById('records-prompt')?.addEventListener('click', () => this.openRecordsModal());
     document.getElementById('phone-booth-prompt')?.addEventListener('click', () => this.openCharacterModal());
+    document.getElementById('sit-bench-prompt')?.addEventListener('click', () => this.sitOnNearestBench());
+    document.getElementById('stand-up-prompt')?.addEventListener('click', () => this.standUpFromBench());
 
     // Analógico Virtual
     const joystickBase = document.getElementById('joystick-base')!;
@@ -2924,13 +3410,19 @@ class SnowSlideTPSMasterEngine {
     joystickBase.addEventListener('pointerup', endJoystick);
     joystickBase.addEventListener('pointercancel', endJoystick);
 
-    // Bloqueio do Ponteiro do Mouse (Pointer Lock)
-    this.renderer.domElement.addEventListener('click', () => {
+    // Bloqueio do Ponteiro do Mouse & Arremesso de Bola de Neve (Botão Esquerdo)
+    this.renderer.domElement.addEventListener('click', (e) => {
       this.initAudio();
-      if (this.currentScene === 'HUB' && !this.isAnyModalOpen() && !this.isPointerLocked) {
-        try {
-          this.renderer.domElement.requestPointerLock();
-        } catch (err) {}
+      if (this.currentScene === 'HUB' && !this.isAnyModalOpen()) {
+        if (!this.isPointerLocked) {
+          try {
+            this.renderer.domElement.requestPointerLock();
+          } catch (err) {}
+        }
+        // Ao clicar com o botão esquerdo, joga bola de neve!
+        if (e.button === 0) {
+          this.throwSnowball();
+        }
       }
     });
 
@@ -2958,8 +3450,12 @@ class SnowSlideTPSMasterEngine {
     });
 
     window.addEventListener('mousedown', (e) => {
-      if (this.currentScene === 'HUB' && e.button === 2) {
-        this.isRightMouseDown = true;
+      if (this.currentScene === 'HUB') {
+        if (e.button === 2) {
+          this.isRightMouseDown = true;
+        } else if (e.button === 0 && this.isPointerLocked && !this.isAnyModalOpen()) {
+          this.throwSnowball();
+        }
       }
     });
 
@@ -2982,6 +3478,10 @@ class SnowSlideTPSMasterEngine {
 
     // Pulo
     const triggerJump = () => {
+      if (this.isSitting) {
+        this.standUpFromBench();
+        return;
+      }
       if (!this.isJumping) {
         this.isJumping = true;
         this.jumpVelY = this.currentScene === 'RACING' ? 0.44 : 0.40;
@@ -3006,14 +3506,12 @@ class SnowSlideTPSMasterEngine {
     window.addEventListener('keydown', (e) => {
       this.initAudio();
 
-      // Tecla TAB: Alterna Inventário
       if (e.key === 'Tab' || e.code === 'Tab') {
         e.preventDefault();
         this.toggleInventoryModal();
         return;
       }
 
-      // Tecla O: Alterna Configurações
       if (e.key === 'o' || e.key === 'O') {
         e.preventDefault();
         const settingsModal = document.getElementById('settings-modal');
@@ -3025,13 +3523,19 @@ class SnowSlideTPSMasterEngine {
         return;
       }
 
-      // Tecla ESC: Fecha qualquer modal
       if (e.key === 'Escape') {
         this.closeAllModals();
         return;
       }
 
       if (this.isAnyModalOpen()) return;
+
+      // Se estiver sentado e tentar mover, levanta do banco
+      if (this.isSitting) {
+        if (['w', 'W', 's', 'S', 'a', 'A', 'd', 'D', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+          this.standUpFromBench();
+        }
+      }
 
       if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') this.keyW = true;
       if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') this.keyS = true;
@@ -3042,7 +3546,11 @@ class SnowSlideTPSMasterEngine {
       
       // Tecla E para interações contextuais no Hub
       if ((e.key === 'e' || e.key === 'E') && this.currentScene === 'HUB') {
-        if (this.nearGarage) {
+        if (this.isSitting) {
+          this.standUpFromBench();
+        } else if (this.nearBench) {
+          this.sitOnNearestBench();
+        } else if (this.nearGarage) {
           this.openSegmentedShop('garage');
         } else if (this.nearHatShop) {
           this.openSegmentedShop('hats');
@@ -3067,6 +3575,36 @@ class SnowSlideTPSMasterEngine {
     });
   }
 
+  private sitOnNearestBench() {
+    if (!this.nearBench) return;
+    this.isSitting = true;
+    this.currentBench = this.nearBench;
+    this.playerPosX = this.nearBench.x;
+    this.playerPosZ = this.nearBench.z;
+    this.playerPosY = 0.52;
+    this.playerGroup.rotation.y = this.nearBench.rotY;
+
+    const sitPrompt = document.getElementById('sit-bench-prompt');
+    if (sitPrompt) sitPrompt.style.display = 'none';
+
+    const standPrompt = document.getElementById('stand-up-prompt');
+    if (standPrompt) standPrompt.style.display = 'block';
+
+    this.showToast('Você se sentou no banco para descansar!', 'info');
+  }
+
+  private standUpFromBench() {
+    if (!this.isSitting || !this.currentBench) return;
+    this.isSitting = false;
+    this.playerPosY = 0;
+    this.playerPosX += Math.sin(this.currentBench.rotY) * 0.95;
+    this.playerPosZ += Math.cos(this.currentBench.rotY) * 0.95;
+    this.currentBench = null;
+
+    const standPrompt = document.getElementById('stand-up-prompt');
+    if (standPrompt) standPrompt.style.display = 'none';
+  }
+
   // =========================================================================
   // GAME LOOP PRINCIPAL
   // =========================================================================
@@ -3087,70 +3625,99 @@ class SnowSlideTPSMasterEngine {
     }
 
     if (this.currentScene === 'HUB') {
-      const running = this.keyShift || this.isRunning;
-      const moveSpeed = running ? 0.28 : 0.16;
+      // Atualização dos NPCs autônomos circulando pela praça
+      this.updateWanderingNPCs();
 
-      const cosYaw = Math.cos(this.cameraAngleY);
-      const sinYaw = Math.sin(this.cameraAngleY);
+      // Atualização das bolas de neve atiradas
+      this.updateSnowballs();
 
-      const fwdX = -sinYaw;
-      const fwdZ = -cosYaw;
-      const rightX = cosYaw;
-      const rightZ = -sinYaw;
+      if (!this.isSitting) {
+        const running = this.keyShift || this.isRunning;
+        const moveSpeed = running ? 0.28 : 0.16;
 
-      let moveWorldX = (fwdX * inputForward) + (rightX * inputLateral);
-      let moveWorldZ = (fwdZ * inputForward) + (rightZ * inputLateral);
+        const cosYaw = Math.cos(this.cameraAngleY);
+        const sinYaw = Math.sin(this.cameraAngleY);
 
-      const moveMag = Math.sqrt(moveWorldX * moveWorldX + moveWorldZ * moveWorldZ);
-      const isMoving = moveMag > 0.05;
+        const fwdX = -sinYaw;
+        const fwdZ = -cosYaw;
+        const rightX = cosYaw;
+        const rightZ = -sinYaw;
 
-      if (isMoving) {
-        moveWorldX = (moveWorldX / moveMag) * moveSpeed;
-        moveWorldZ = (moveWorldZ / moveMag) * moveSpeed;
+        let moveWorldX = (fwdX * inputForward) + (rightX * inputLateral);
+        let moveWorldZ = (fwdZ * inputForward) + (rightZ * inputLateral);
 
-        const desiredX = this.playerPosX + moveWorldX;
-        const desiredZ = this.playerPosZ + moveWorldZ;
+        const moveMag = Math.sqrt(moveWorldX * moveWorldX + moveWorldZ * moveWorldZ);
+        const isMoving = moveMag > 0.05;
 
-        const resolved = this.resolveHubCollisions(desiredX, desiredZ, 0.85);
-        this.playerPosX = resolved.x;
-        this.playerPosZ = resolved.z;
+        if (isMoving) {
+          moveWorldX = (moveWorldX / moveMag) * moveSpeed;
+          moveWorldZ = (moveWorldZ / moveMag) * moveSpeed;
 
-        const targetRotY = Math.atan2(moveWorldX, moveWorldZ);
-        let diffRot = targetRotY - this.playerGroup.rotation.y;
-        while (diffRot > Math.PI) diffRot -= Math.PI * 2;
-        while (diffRot < -Math.PI) diffRot += Math.PI * 2;
-        this.playerGroup.rotation.y += diffRot * 0.22;
+          const desiredX = this.playerPosX + moveWorldX;
+          const desiredZ = this.playerPosZ + moveWorldZ;
 
-        this.walkTime += running ? 0.30 : 0.18;
-        this.animateCharacterWalk(this.walkTime, running);
+          const resolved = this.resolveHubCollisions(desiredX, desiredZ, 0.85);
+          this.playerPosX = resolved.x;
+          this.playerPosZ = resolved.z;
 
-        if (Math.random() < 0.22) {
-          this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
+          const targetRotY = Math.atan2(moveWorldX, moveWorldZ);
+          let diffRot = targetRotY - this.playerGroup.rotation.y;
+          while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+          while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+          this.playerGroup.rotation.y += diffRot * 0.22;
+
+          this.walkTime += running ? 0.30 : 0.18;
+          this.animateCharacterWalk(this.walkTime, running);
+
+          if (Math.random() < 0.22) {
+            this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
+          }
+        } else {
+          this.animateCharacterIdle();
         }
+
+        // Pulo flutuante no Hub
+        if (this.isJumping) {
+          this.playerPosY += this.jumpVelY;
+          this.jumpVelY -= 0.022;
+          if (this.playerPosY <= 0) {
+            this.playerPosY = 0;
+            this.isJumping = false;
+            this.jumpVelY = 0;
+            this.emitSnowSpray(6, 0);
+          }
+        }
+
       } else {
+        // Personagem sentado descansando
         this.animateCharacterIdle();
       }
 
-      // Pulo flutuante no Hub
-      if (this.isJumping) {
-        this.playerPosY += this.jumpVelY;
-        this.jumpVelY -= 0.022;
-        if (this.playerPosY <= 0) {
-          this.playerPosY = 0;
-          this.isJumping = false;
-          this.jumpVelY = 0;
-          this.emitSnowSpray(6, 0);
+      this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
+
+      // Verificação de Proximidade: Bancos de Madeira
+      this.nearBench = null;
+      if (!this.isSitting) {
+        for (const b of this.benches) {
+          const dx = this.playerPosX - b.x;
+          const dz = this.playerPosZ - b.z;
+          if (Math.sqrt(dx * dx + dz * dz) < 2.2) {
+            this.nearBench = b;
+            break;
+          }
+        }
+        const sitPrompt = document.getElementById('sit-bench-prompt');
+        if (sitPrompt) {
+          sitPrompt.style.display = this.nearBench ? 'block' : 'none';
         }
       }
-
-      this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
 
       // Verificação de Proximidade: Bondinho
       const distCableCar = this.cableCarStationPos.distanceTo(new THREE.Vector3(this.playerPosX, 0, this.playerPosZ));
       const cableCarPrompt = document.getElementById('cable-car-prompt');
       if (cableCarPrompt) {
         this.nearCableCar = distCableCar < 6.5;
-        cableCarPrompt.style.display = this.nearCableCar ? 'block' : 'none';
+        cableCarPrompt.style.display = (this.nearCableCar && !this.isSitting) ? 'block' : 'none';
       }
 
       // Verificação de Proximidade: Garagem Alpina
@@ -3158,7 +3725,7 @@ class SnowSlideTPSMasterEngine {
       const garagePrompt = document.getElementById('garage-shop-prompt');
       if (garagePrompt) {
         this.nearGarage = distGarage < 4.5;
-        garagePrompt.style.display = this.nearGarage ? 'block' : 'none';
+        garagePrompt.style.display = (this.nearGarage && !this.isSitting) ? 'block' : 'none';
       }
 
       // Verificação de Proximidade: Boutique dos Gorros
@@ -3166,7 +3733,7 @@ class SnowSlideTPSMasterEngine {
       const hatPrompt = document.getElementById('hat-shop-prompt');
       if (hatPrompt) {
         this.nearHatShop = distHat < 4.5;
-        hatPrompt.style.display = this.nearHatShop ? 'block' : 'none';
+        hatPrompt.style.display = (this.nearHatShop && !this.isSitting) ? 'block' : 'none';
       }
 
       // Verificação de Proximidade: Ateliê da Montanha
@@ -3174,7 +3741,7 @@ class SnowSlideTPSMasterEngine {
       const atelierPrompt = document.getElementById('atelier-shop-prompt');
       if (atelierPrompt) {
         this.nearAtelier = distAtelier < 4.5;
-        atelierPrompt.style.display = this.nearAtelier ? 'block' : 'none';
+        atelierPrompt.style.display = (this.nearAtelier && !this.isSitting) ? 'block' : 'none';
       }
 
       // Verificação de Proximidade: Quadro de Recordes da Taverna
@@ -3182,7 +3749,7 @@ class SnowSlideTPSMasterEngine {
       const recordsPrompt = document.getElementById('records-prompt');
       if (recordsPrompt) {
         this.nearRecords = distRecords < 4.2;
-        recordsPrompt.style.display = this.nearRecords ? 'block' : 'none';
+        recordsPrompt.style.display = (this.nearRecords && !this.isSitting) ? 'block' : 'none';
       }
 
       // Verificação de Proximidade: Cabine Telefônica
@@ -3190,7 +3757,7 @@ class SnowSlideTPSMasterEngine {
       const phonePrompt = document.getElementById('phone-booth-prompt');
       if (phonePrompt) {
         this.nearPhoneBooth = distPhone < 3.2;
-        phonePrompt.style.display = this.nearPhoneBooth ? 'block' : 'none';
+        phonePrompt.style.display = (this.nearPhoneBooth && !this.isSitting) ? 'block' : 'none';
       }
 
       // Animação dos NPCs Lojistas
@@ -3253,7 +3820,6 @@ class SnowSlideTPSMasterEngine {
           this.emitSnowSpray(4, 0);
         }
 
-        // Direção: D vira para a Direita (-X), A vira para a Esquerda (+X)
         const steeringSensitivity = 0.046;
         this.playerVelX -= inputLateral * steeringSensitivity;
         this.playerVelX *= 0.88;
@@ -3262,17 +3828,14 @@ class SnowSlideTPSMasterEngine {
         this.playerPosX += this.playerVelX;
         this.playerPosZ += this.playerVelZ;
 
-        // Limites de pista
         if (this.playerPosX < -23.5) { this.playerPosX = -23.5; this.playerVelX = 0; }
         if (this.playerPosX > 23.5) { this.playerPosX = 23.5; this.playerVelX = 0; }
 
-        // Verificação da Linha de Chegada
         if (this.playerPosZ >= this.raceTrackLength) {
           this.finishRace();
         }
 
       } else {
-        // Desaceleração suave na área pós-chegada
         this.playerVelZ *= 0.96;
         this.playerPosZ += this.playerVelZ;
         this.updateConfetti();
@@ -3314,7 +3877,7 @@ class SnowSlideTPSMasterEngine {
 
       this.updateSnowSpray();
 
-      // Colisão de Slalom: Passando por dentro do arco
+      // Colisão de Slalom
       for (const gate of this.gates) {
         if (!gate.passed && Math.abs(this.playerPosZ - gate.z) < 2.2) {
           if (Math.abs(this.playerPosX - gate.x) < 3.0) {
@@ -3326,13 +3889,11 @@ class SnowSlideTPSMasterEngine {
             this.emitSnowSpray(14, 0);
             this.playSlalomChime();
 
-            // Luz verde nos alvos do arco
             if (gate.leftLight && gate.rightLight) {
               (gate.leftLight.material as THREE.MeshBasicMaterial).color.setHex(0x22c55e);
               (gate.rightLight.material as THREE.MeshBasicMaterial).color.setHex(0x22c55e);
             }
 
-            // Pop-up visual "+100 PTS! PORTAL SLALOM!"
             const popup = document.getElementById('slalom-popup');
             if (popup) {
               popup.style.display = 'block';
@@ -3372,7 +3933,6 @@ class SnowSlideTPSMasterEngine {
         }
       }
 
-      // Atualização de Pontuação
       if (!this.isRaceFinished) {
         this.score += Math.round(this.playerVelZ * 3.5);
       }
