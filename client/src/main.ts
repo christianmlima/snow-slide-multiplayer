@@ -5548,7 +5548,8 @@ class SnowSlideTPSMasterEngine {
       'records-modal',
       'race-finish-modal',
       'shooting-results-modal',
-      'snowball-war-results-modal'
+      'snowball-war-results-modal',
+      'instructions-modal'
     ];
     for (const m of modals) {
       const el = document.getElementById(m);
@@ -5566,7 +5567,8 @@ class SnowSlideTPSMasterEngine {
       'records-modal',
       'race-finish-modal',
       'shooting-results-modal',
-      'snowball-war-results-modal'
+      'snowball-war-results-modal',
+      'instructions-modal'
     ];
     for (const m of modals) {
       const el = document.getElementById(m);
@@ -5576,6 +5578,17 @@ class SnowSlideTPSMasterEngine {
     this.keyS = false;
     this.keyA = false;
     this.keyD = false;
+  }
+
+  private toggleInstructionsModal() {
+    const modal = document.getElementById('instructions-modal');
+    if (!modal) return;
+    if (modal.style.display === 'flex') {
+      modal.style.display = 'none';
+    } else {
+      this.closeAllModals();
+      modal.style.display = 'flex';
+    }
   }
 
   private toggleInventoryModal() {
@@ -5731,6 +5744,38 @@ class SnowSlideTPSMasterEngine {
     document.getElementById('open-settings-btn')!.addEventListener('click', () => {
       this.openSettingsModal();
     });
+
+    const openInstBtn = document.getElementById('open-instructions-btn');
+    if (openInstBtn) {
+      openInstBtn.addEventListener('click', () => {
+        this.toggleInstructionsModal();
+      });
+    }
+
+    const closeInstBtn = document.getElementById('close-instructions-btn');
+    if (closeInstBtn) {
+      closeInstBtn.addEventListener('click', () => {
+        const instModal = document.getElementById('instructions-modal');
+        if (instModal) instModal.style.display = 'none';
+      });
+    }
+
+    const understandInstBtn = document.getElementById('understand-instructions-btn');
+    if (understandInstBtn) {
+      understandInstBtn.addEventListener('click', () => {
+        const instModal = document.getElementById('instructions-modal');
+        if (instModal) instModal.style.display = 'none';
+      });
+    }
+
+    const instModalOverlay = document.getElementById('instructions-modal');
+    if (instModalOverlay) {
+      instModalOverlay.addEventListener('click', (e) => {
+        if (e.target === instModalOverlay) {
+          instModalOverlay.style.display = 'none';
+        }
+      });
+    }
 
     document.getElementById('close-shop-btn')!.addEventListener('click', () => {
       document.getElementById('shop-modal')!.style.display = 'none';
@@ -6169,6 +6214,12 @@ class SnowSlideTPSMasterEngine {
         } else {
           this.openSettingsModal();
         }
+        return;
+      }
+
+      if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        this.toggleInstructionsModal();
         return;
       }
 
