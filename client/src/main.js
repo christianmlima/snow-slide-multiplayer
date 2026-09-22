@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-const GAME_VERSION = "v1.7.0-STABLE";
+const GAME_VERSION = "v1.8.0-STABLE";
 const SHOP_CATALOG = [
     // Veículos
     { id: 'sled_wood', name: 'Trenó de Madeira', category: 'sleds', price: 0, icon: '🛷', desc: 'Clássico trenó alpino com patins de aço polido.' },
@@ -45,6 +45,13 @@ class SnowSlideTPSMasterEngine {
         goggles: 'goggles_none'
     };
     inventory = new Set(['sled_wood', 'hat_red', 'scarf_green', 'goggles_none']);
+    // Colisões do Hub
+    hubColliders = [];
+    // Lojinha Alpina Física & NPC Lojista
+    shopPos = new THREE.Vector3(-22, 0, -18);
+    shopInteractionPos = new THREE.Vector3(-24.8, 0, -11.4);
+    nearShop = false;
+    merchantPenguin = null;
     // Membros do Pinguim para Animação Procedural
     penguinTorso;
     penguinHead;
@@ -828,10 +835,10 @@ class SnowSlideTPSMasterEngine {
         group.position.set(-16, 0, 10);
         return group;
     }
-    createChalet(x, z, rotY, isShop = false) {
+    createChalet(x, z, rotY) {
         const chalet = new THREE.Group();
         const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 });
-        const roofMat = new THREE.MeshStandardMaterial({ color: isShop ? 0x0369a1 : 0x991b1b, roughness: 0.6 });
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.6 });
         const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 });
         const windowMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 0.5 });
         // Parede
@@ -854,16 +861,233 @@ class SnowSlideTPSMasterEngine {
         const win2 = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), windowMat);
         win2.position.set(2.8, 3.8, 5.02);
         chalet.add(win1, win2);
-        // Placa da Loja se for Chalé da Loja
-        if (isShop) {
-            const signMat = new THREE.MeshStandardMaterial({ color: 0xfacc15 });
-            const sign = new THREE.Mesh(new THREE.BoxGeometry(6.5, 1.4, 0.2), signMat);
-            sign.position.set(0, 5.8, 5.15);
-            chalet.add(sign);
-        }
         chalet.position.set(x, 0, z);
         chalet.rotation.y = rotY;
         return chalet;
+    }
+    // Lojinha Alpina Física com Balcão Aberto, Toldo, Lanternas e Vendedor NPC Pingo
+    createShopBuilding(x, z, rotY) {
+        const group = new THREE.Group();
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x6d3916, roughness: 0.75 });
+        const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.8 });
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.5 });
+        const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 });
+        const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.7, roughness: 0.3 });
+        const counterMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.6 });
+        const windowMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 0.6 });
+        // 1. Corpo principal do chalé
+        const walls = new THREE.Mesh(new THREE.BoxGeometry(11, 6.5, 10), woodMat);
+        walls.position.y = 3.25;
+        walls.castShadow = true;
+        group.add(walls);
+        // Telhado de montanha com neve espessa
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(8.8, 4.8, 4), roofMat);
+        roof.position.y = 8.6;
+        roof.rotation.y = Math.PI / 4;
+        roof.castShadow = true;
+        const roofSnow = new THREE.Mesh(new THREE.ConeGeometry(9.1, 1.3, 4), snowMat);
+        roofSnow.position.y = 9.3;
+        roofSnow.rotation.y = Math.PI / 4;
+        group.add(roof, roofSnow);
+        // Janelas iluminadas laterais
+        const winL = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0), windowMat);
+        winL.position.set(-5.52, 3.6, 0);
+        winL.rotation.y = -Math.PI / 2;
+        const winR = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0), windowMat);
+        winR.position.set(5.52, 3.6, 0);
+        winR.rotation.y = Math.PI / 2;
+        group.add(winL, winR);
+        // 2. Balcão de atendimento frontal voltado para a praça
+        const counter = new THREE.Mesh(new THREE.BoxGeometry(5.4, 1.15, 1.2), counterMat);
+        counter.position.set(0, 0.58, 5.4);
+        counter.castShadow = true;
+        counter.receiveShadow = true;
+        group.add(counter);
+        // Toldo listrado acima do balcão
+        const awning = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.18, 2.4), new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 }));
+        awning.position.set(0, 4.1, 5.6);
+        awning.rotation.x = 0.22;
+        awning.castShadow = true;
+        group.add(awning);
+        // Postes de sustentação do toldo
+        for (const px of [-2.9, 2.9]) {
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.8, 8), darkWoodMat);
+            pole.position.set(px, 1.9, 6.4);
+            group.add(pole);
+        }
+        // Placa artesanal da Lojinha Alpina
+        const signBoard = new THREE.Mesh(new THREE.BoxGeometry(5.8, 1.3, 0.22), goldMat);
+        signBoard.position.set(0, 4.9, 5.2);
+        group.add(signBoard);
+        // Lanternas quentes no balcão
+        for (const lx of [-2.4, 2.4]) {
+            const lanternMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 1.0 });
+            const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.45, 0.3), lanternMat);
+            lamp.position.set(lx, 3.5, 6.0);
+            const light = new THREE.PointLight(0xf59e0b, 1.2, 7);
+            light.position.copy(lamp.position);
+            group.add(lamp, light);
+        }
+        // Itens em exposição no balcão (mini trenó, chapéu e sino dourado)
+        const miniSled = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.9), new THREE.MeshStandardMaterial({ color: 0xdc2626 }));
+        miniSled.position.set(-1.6, 1.25, 5.4);
+        miniSled.rotation.y = 0.3;
+        const miniHat = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshStandardMaterial({ color: 0x38bdf8 }));
+        miniHat.position.set(1.6, 1.3, 5.4);
+        const bell = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.18, 8), goldMat);
+        bell.position.set(0.6, 1.24, 5.3);
+        group.add(miniSled, miniHat, bell);
+        // Tapete de boas-vindas na neve em frente ao balcão
+        const rug = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.2), new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.85 }));
+        rug.rotation.x = -Math.PI / 2;
+        rug.position.set(0, 0.02, 6.6);
+        rug.receiveShadow = true;
+        group.add(rug);
+        // 3. Vendedor NPC: Pingo, o Pinguim Lojista
+        this.merchantPenguin = new THREE.Group();
+        const pBodyMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
+        const pBellyMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+        const pBeakMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.4 });
+        const pApronMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.6 });
+        const pTorso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.65, 8, 12), pBodyMat);
+        pTorso.position.y = 1.35;
+        const pBelly = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 10), pBellyMat);
+        pBelly.scale.set(0.85, 1.1, 0.4);
+        pBelly.position.set(0, 1.32, 0.28);
+        const pBeak = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.28, 6), pBeakMat);
+        pBeak.rotation.x = Math.PI / 2;
+        pBeak.position.set(0, 1.62, 0.42);
+        const apron = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.1), pApronMat);
+        apron.position.set(0, 1.25, 0.32);
+        const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.35, 10), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+        hat.position.set(0, 1.95, 0);
+        this.merchantPenguin.add(pTorso, pBelly, pBeak, apron, hat);
+        this.merchantPenguin.position.set(0, 0, 4.4); // Atrás do balcão
+        group.add(this.merchantPenguin);
+        group.position.set(x, 0, z);
+        group.rotation.y = rotY;
+        return group;
+    }
+    // Poste de luz com lanterna quente
+    createStreetLamp(x, z) {
+        const lamp = new THREE.Group();
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.8 });
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.3 });
+        const glassMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 1.0 });
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 4.6, 8), woodMat);
+        pole.position.y = 2.3;
+        pole.castShadow = true;
+        lamp.add(pole);
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.1), metalMat);
+        arm.position.set(0.35, 4.4, 0);
+        lamp.add(arm);
+        const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.5, 0.35), glassMat);
+        lantern.position.set(0.7, 4.1, 0);
+        const light = new THREE.PointLight(0xfbbf24, 1.2, 16);
+        light.position.set(0.7, 4.1, 0);
+        lamp.add(lantern, light);
+        const snowCap = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.2, 4), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+        snowCap.position.set(0.7, 4.45, 0);
+        snowCap.rotation.y = Math.PI / 4;
+        lamp.add(snowCap);
+        lamp.position.set(x, 0, z);
+        return lamp;
+    }
+    // Cercas rústicas de madeira para delimitação do vilarejo
+    createRusticFence(x, z, rotY, length) {
+        const fence = new THREE.Group();
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.85 });
+        const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 });
+        const rail1 = new THREE.Mesh(new THREE.BoxGeometry(length, 0.12, 0.12), woodMat);
+        rail1.position.y = 0.5;
+        const rail2 = new THREE.Mesh(new THREE.BoxGeometry(length, 0.14, 0.14), woodMat);
+        rail2.position.y = 1.0;
+        const snow = new THREE.Mesh(new THREE.BoxGeometry(length, 0.08, 0.18), snowMat);
+        snow.position.y = 1.1;
+        fence.add(rail1, rail2, snow);
+        const postCount = Math.max(2, Math.floor(length / 2.8) + 1);
+        for (let i = 0; i < postCount; i++) {
+            const px = -length / 2 + (i / (postCount - 1)) * length;
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 1.4, 6), woodMat);
+            post.position.set(px, 0.7, 0);
+            post.castShadow = true;
+            fence.add(post);
+        }
+        fence.position.set(x, 0, z);
+        fence.rotation.y = rotY;
+        return fence;
+    }
+    // Resolução de colisões sólidas no Hub (Círculos, Caixas orientadas e Fronteiras)
+    resolveHubCollisions(px, pz, playerRadius = 0.85) {
+        let resX = px;
+        let resZ = pz;
+        for (let pass = 0; pass < 2; pass++) {
+            for (const col of this.hubColliders) {
+                if (col.type === 'circle') {
+                    const dx = resX - col.x;
+                    const dz = resZ - col.z;
+                    const distSq = dx * dx + dz * dz;
+                    const minDist = col.r + playerRadius;
+                    if (distSq < minDist * minDist) {
+                        const dist = Math.sqrt(distSq);
+                        if (dist > 0.0001) {
+                            const overlap = minDist - dist;
+                            resX += (dx / dist) * overlap;
+                            resZ += (dz / dist) * overlap;
+                        }
+                        else {
+                            resX += minDist;
+                        }
+                    }
+                }
+                else if (col.type === 'box') {
+                    const dx = resX - col.x;
+                    const dz = resZ - col.z;
+                    const cosA = Math.cos(-col.angle);
+                    const sinA = Math.sin(-col.angle);
+                    const localX = dx * cosA - dz * sinA;
+                    const localZ = dx * sinA + dz * cosA;
+                    const clampedX = Math.max(-col.hw, Math.min(col.hw, localX));
+                    const clampedZ = Math.max(-col.hd, Math.min(col.hd, localZ));
+                    const diffX = localX - clampedX;
+                    const diffZ = localZ - clampedZ;
+                    const distSq = diffX * diffX + diffZ * diffZ;
+                    if (distSq < playerRadius * playerRadius) {
+                        let pushLocalX = 0;
+                        let pushLocalZ = 0;
+                        if (distSq > 0.00001) {
+                            const dist = Math.sqrt(distSq);
+                            const overlap = playerRadius - dist;
+                            pushLocalX = (diffX / dist) * overlap;
+                            pushLocalZ = (diffZ / dist) * overlap;
+                        }
+                        else {
+                            const distLeft = localX - (-col.hw);
+                            const distRight = col.hw - localX;
+                            const distTop = localZ - (-col.hd);
+                            const distBottom = col.hd - localZ;
+                            const minD = Math.min(distLeft, distRight, distTop, distBottom);
+                            if (minD === distLeft)
+                                pushLocalX = -(distLeft + playerRadius);
+                            else if (minD === distRight)
+                                pushLocalX = (distRight + playerRadius);
+                            else if (minD === distTop)
+                                pushLocalZ = -(distTop + playerRadius);
+                            else
+                                pushLocalZ = (distBottom + playerRadius);
+                        }
+                        const worldPushX = pushLocalX * Math.cos(col.angle) - pushLocalZ * Math.sin(col.angle);
+                        const worldPushZ = pushLocalX * Math.sin(col.angle) + pushLocalZ * Math.cos(col.angle);
+                        resX += worldPushX;
+                        resZ += worldPushZ;
+                    }
+                }
+            }
+        }
+        const maxBound = 44;
+        resX = Math.max(-maxBound, Math.min(maxBound, resX));
+        resZ = Math.max(-maxBound, Math.min(maxBound, resZ));
+        return { x: resX, z: resZ };
     }
     // =========================================================================
     // CENAS: LOAD HUB & LOAD RACING
@@ -917,27 +1141,89 @@ class SnowSlideTPSMasterEngine {
         ground.rotation.x = -Math.PI / 2;
         ground.receiveShadow = true;
         this.scene.add(ground);
+        this.hubColliders = [];
         // 1. Estação do Bondinho (Teleférico com cabos para o morro)
         this.scene.add(this.createCableCarBaseStation());
-        // 2. Fogueira acolhedora central (estilo Sledding Game)
+        // Colisores sólidos da estação:
+        this.hubColliders.push({ type: 'box', x: 22, z: -20.5, hw: 8.5, hd: 4.2, angle: 0 }); // maquinário/fundo
+        this.hubColliders.push({ type: 'box', x: 13.8, z: -15.5, hw: 0.8, hd: 2.8, angle: 0 }); // lateral esquerda
+        this.hubColliders.push({ type: 'box', x: 30.2, z: -15.5, hw: 0.8, hd: 2.8, angle: 0 }); // lateral direita
+        this.hubColliders.push({ type: 'circle', x: 22, z: -19, r: 1.2 }); // torre de aço
+        // 2. Fogueira acolhedora central com bancos
         this.scene.add(this.createBonfire());
+        this.hubColliders.push({ type: 'circle', x: -6, z: -2, r: 2.1 }); // poço de fogo
+        for (let i = 0; i < 3; i++) {
+            const ang = (i / 3) * Math.PI * 1.6 + 0.6;
+            const bx = -6 + Math.cos(ang) * 4.2;
+            const bz = -2 + Math.sin(ang) * 4.2;
+            this.hubColliders.push({ type: 'box', x: bx, z: bz, hw: 1.8, hd: 0.65, angle: ang + Math.PI / 2 });
+        }
         // 3. Boneco de Neve
         this.scene.add(this.createSnowman());
-        // 4. Chalés alpinos (incluindo o chalé da Lojinha)
-        this.scene.add(this.createChalet(-26, 18, 0.3)); // Chalé residencial
-        this.scene.add(this.createChalet(-24, -20, -0.4, true)); // Chalé da Lojinha Alpina
+        this.hubColliders.push({ type: 'circle', x: -16, z: 10, r: 1.4 });
+        // 4. Chalés residenciais
+        this.scene.add(this.createChalet(-26, 18, 0.3));
+        this.hubColliders.push({ type: 'box', x: -26, z: 18, hw: 6.0, hd: 5.4, angle: 0.3 });
         this.scene.add(this.createChalet(4, 26, Math.PI - 0.2));
-        // 5. Montanhas no horizonte do Hub
+        this.hubColliders.push({ type: 'box', x: 4, z: 26, hw: 6.0, hd: 5.4, angle: Math.PI - 0.2 });
+        // 5. Lojinha Alpina Física (com balcão frontal e vendedor NPC Pingo)
+        const shopX = -22;
+        const shopZ = -18;
+        const shopRot = -0.4;
+        this.scene.add(this.createShopBuilding(shopX, shopZ, shopRot));
+        this.hubColliders.push({ type: 'box', x: shopX, z: shopZ, hw: 6.0, hd: 5.4, angle: shopRot });
+        const cwX = shopX + Math.sin(shopRot) * 5.4;
+        const cwZ = shopZ + Math.cos(shopRot) * 5.4;
+        this.hubColliders.push({ type: 'box', x: cwX, z: cwZ, hw: 3.0, hd: 0.9, angle: shopRot });
+        this.shopInteractionPos.set(shopX + Math.sin(shopRot) * 7.2, 0, shopZ + Math.cos(shopRot) * 7.2);
+        // 6. Postes de iluminação da praça com lanternas quentes
+        const lampPositions = [
+            [-8, 8],
+            [10, 4],
+            [-10, -12],
+            [12, -6]
+        ];
+        for (const [lx, lz] of lampPositions) {
+            this.scene.add(this.createStreetLamp(lx, lz));
+            this.hubColliders.push({ type: 'circle', x: lx, z: lz, r: 0.5 });
+        }
+        // 7. Pinheiros decorativos internos da praça
+        const innerTrees = [
+            [-18, -4],
+            [-8, 22],
+            [16, 18],
+            [28, 6],
+            [6, -18],
+            [-34, 2]
+        ];
+        for (const [tx, tz] of innerTrees) {
+            const tree = this.createSnowyPineTree();
+            tree.position.set(tx, 0, tz);
+            tree.scale.setScalar(0.95);
+            this.scene.add(tree);
+            this.hubColliders.push({ type: 'circle', x: tx, z: tz, r: 0.9 });
+        }
+        // 8. Cercas rústicas delimitadoras da vila alpina
+        const fences = [
+            { x: 0, z: -43, rot: 0, len: 38 },
+            { x: 0, z: 43, rot: 0, len: 70 },
+            { x: -43, z: 0, rot: Math.PI / 2, len: 70 },
+            { x: 43, z: 12, rot: Math.PI / 2, len: 45 }
+        ];
+        for (const f of fences) {
+            this.scene.add(this.createRusticFence(f.x, f.z, f.rot, f.len));
+        }
+        // 9. Montanhas no horizonte do Hub
         for (let i = 0; i < 6; i++) {
             const ang = (i / 6) * Math.PI * 2;
             const p = this.createMountainPeak(55 + Math.random() * 20, 80 + Math.random() * 40);
             p.position.set(Math.cos(ang) * 160, 0, Math.sin(ang) * 160);
             this.scene.add(p);
         }
-        // 6. Pinheiros nevados ao redor
+        // 10. Pinheiros nevados no perímetro
         for (let i = 0; i < 30; i++) {
             const angle = (i / 30) * Math.PI * 2;
-            const radius = 45 + Math.random() * 35;
+            const radius = 46 + Math.random() * 32;
             const tree = this.createSnowyPineTree();
             tree.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
             tree.scale.setScalar(0.85 + Math.random() * 0.35);
@@ -951,6 +1237,8 @@ class SnowSlideTPSMasterEngine {
         this.playerVelZ = 0;
         this.isJumping = false;
         this.jumpVelY = 0;
+        this.nearCableCar = false;
+        this.nearShop = false;
         this.keyW = false;
         this.keyS = false;
         this.keyA = false;
@@ -970,6 +1258,11 @@ class SnowSlideTPSMasterEngine {
         document.getElementById('back-hub-btn').style.display = 'none';
         document.getElementById('joystick-ui').style.display = 'block';
         document.getElementById('run-btn').style.display = 'flex';
+        document.getElementById('cable-car-prompt').style.display = 'none';
+        const shopP = document.getElementById('shop-prompt');
+        if (shopP)
+            shopP.style.display = 'none';
+        this.closeAllModals();
     }
     loadRacingScene() {
         this.currentScene = 'RACING';
@@ -1256,6 +1549,109 @@ class SnowSlideTPSMasterEngine {
         // Reconstrói o avatar instantaneamente com as novas peças visuais
         this.respawnPlayerMesh();
     }
+    isAnyModalOpen() {
+        const s = document.getElementById('shop-modal');
+        const i = document.getElementById('inventory-modal');
+        return (s && s.style.display === 'flex') || (i && i.style.display === 'flex') || false;
+    }
+    closeAllModals() {
+        const s = document.getElementById('shop-modal');
+        const i = document.getElementById('inventory-modal');
+        if (s)
+            s.style.display = 'none';
+        if (i)
+            i.style.display = 'none';
+        this.keyW = false;
+        this.keyS = false;
+        this.keyA = false;
+        this.keyD = false;
+    }
+    toggleInventoryModal() {
+        const invModal = document.getElementById('inventory-modal');
+        const shopModal = document.getElementById('shop-modal');
+        if (invModal.style.display === 'flex') {
+            invModal.style.display = 'none';
+        }
+        else {
+            shopModal.style.display = 'none';
+            this.renderInventory('sleds');
+            invModal.style.display = 'flex';
+            this.keyW = false;
+            this.keyS = false;
+            this.keyA = false;
+            this.keyD = false;
+        }
+    }
+    openShopModal() {
+        const shopModal = document.getElementById('shop-modal');
+        const invModal = document.getElementById('inventory-modal');
+        invModal.style.display = 'none';
+        this.updateCoinsDisplay();
+        this.renderShop('sleds');
+        shopModal.style.display = 'flex';
+        this.keyW = false;
+        this.keyS = false;
+        this.keyA = false;
+        this.keyD = false;
+    }
+    // Modais de Loja e Inventário
+    setupModalsAndPrompts() {
+        const shopModal = document.getElementById('shop-modal');
+        const invModal = document.getElementById('inventory-modal');
+        document.getElementById('open-shop-btn').addEventListener('click', () => {
+            this.openShopModal();
+        });
+        document.getElementById('close-shop-btn').addEventListener('click', () => {
+            shopModal.style.display = 'none';
+        });
+        document.getElementById('open-inventory-btn').addEventListener('click', () => {
+            this.toggleInventoryModal();
+        });
+        document.getElementById('close-inv-btn').addEventListener('click', () => {
+            invModal.style.display = 'none';
+        });
+        // Fechar ao clicar fora do cartão modal
+        shopModal.addEventListener('click', (e) => {
+            if (e.target === shopModal)
+                shopModal.style.display = 'none';
+        });
+        invModal.addEventListener('click', (e) => {
+            if (e.target === invModal)
+                invModal.style.display = 'none';
+        });
+        // Prompt da Lojinha Alpina
+        const shopPrompt = document.getElementById('shop-prompt');
+        if (shopPrompt) {
+            shopPrompt.addEventListener('click', () => {
+                this.openShopModal();
+            });
+        }
+        // Abas da Loja
+        document.querySelectorAll('[data-shop-tab]').forEach(tabBtn => {
+            tabBtn.addEventListener('click', (e) => {
+                document.querySelectorAll('[data-shop-tab]').forEach(b => b.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                const cat = e.currentTarget.getAttribute('data-shop-tab');
+                this.renderShop(cat);
+            });
+        });
+        // Abas do Inventário
+        document.querySelectorAll('[data-inv-tab]').forEach(tabBtn => {
+            tabBtn.addEventListener('click', (e) => {
+                document.querySelectorAll('[data-inv-tab]').forEach(b => b.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                const cat = e.currentTarget.getAttribute('data-inv-tab');
+                this.renderInventory(cat);
+            });
+        });
+    }
+    // Interação com o Bondinho
+    setupCableCarInteraction() {
+        const cablePrompt = document.getElementById('cable-car-prompt');
+        cablePrompt.addEventListener('click', () => {
+            this.startCableCarClimb();
+        });
+    }
     // =========================================================================
     // SETUP DE CONTROLES E EVENTOS
     // =========================================================================
@@ -1275,47 +1671,9 @@ class SnowSlideTPSMasterEngine {
         document.getElementById('back-hub-btn').addEventListener('click', () => {
             this.loadHubScene();
         });
-        // Modais de Loja e Inventário
-        const shopModal = document.getElementById('shop-modal');
-        const invModal = document.getElementById('inventory-modal');
-        document.getElementById('open-shop-btn').addEventListener('click', () => {
-            this.updateCoinsDisplay();
-            this.renderShop('sleds');
-            shopModal.style.display = 'flex';
-        });
-        document.getElementById('close-shop-btn').addEventListener('click', () => {
-            shopModal.style.display = 'none';
-        });
-        document.getElementById('open-inventory-btn').addEventListener('click', () => {
-            this.renderInventory('sleds');
-            invModal.style.display = 'flex';
-        });
-        document.getElementById('close-inv-btn').addEventListener('click', () => {
-            invModal.style.display = 'none';
-        });
-        // Abas da Loja
-        document.querySelectorAll('[data-shop-tab]').forEach(tabBtn => {
-            tabBtn.addEventListener('click', (e) => {
-                document.querySelectorAll('[data-shop-tab]').forEach(b => b.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                const cat = e.currentTarget.getAttribute('data-shop-tab');
-                this.renderShop(cat);
-            });
-        });
-        // Abas do Inventário
-        document.querySelectorAll('[data-inv-tab]').forEach(tabBtn => {
-            tabBtn.addEventListener('click', (e) => {
-                document.querySelectorAll('[data-inv-tab]').forEach(b => b.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                const cat = e.currentTarget.getAttribute('data-inv-tab');
-                this.renderInventory(cat);
-            });
-        });
-        // Interação com o Bondinho
-        const cablePrompt = document.getElementById('cable-car-prompt');
-        cablePrompt.addEventListener('click', () => {
-            this.startCableCarClimb();
-        });
+        // Configuração dos modais e prompts
+        this.setupModalsAndPrompts();
+        this.setupCableCarInteraction();
         // Analógico Virtual
         const joystickBase = document.getElementById('joystick-base');
         joystickBase.addEventListener('pointerdown', (e) => {
@@ -1356,7 +1714,7 @@ class SnowSlideTPSMasterEngine {
             if (this.currentScene !== 'HUB')
                 return;
             const target = e.target;
-            if (target && (target.closest('#hub-ui') || target.closest('#joystick-ui') || target.closest('#jump-btn') || target.closest('#run-btn') || target.closest('#cable-car-prompt') || target.closest('.modal-card') || target.closest('button') || target.closest('input')))
+            if (target && (target.closest('#hub-ui') || target.closest('#joystick-ui') || target.closest('#jump-btn') || target.closest('#run-btn') || target.closest('#cable-car-prompt') || target.closest('#shop-prompt') || target.closest('.modal-card') || target.closest('button') || target.closest('input')))
                 return;
             this.activeOrbitPointerId = e.pointerId;
             this.isDragging = true;
@@ -1403,6 +1761,20 @@ class SnowSlideTPSMasterEngine {
             runBtn.classList.toggle('active', this.isRunning);
         });
         window.addEventListener('keydown', (e) => {
+            // Tecla TAB: Alterna Menu de Equipamentos / Inventário
+            if (e.key === 'Tab' || e.code === 'Tab') {
+                e.preventDefault();
+                this.toggleInventoryModal();
+                return;
+            }
+            // Tecla ESC: Fecha qualquer modal aberto
+            if (e.key === 'Escape') {
+                this.closeAllModals();
+                return;
+            }
+            // Se modal estiver aberto, ignora movimentação
+            if (this.isAnyModalOpen())
+                return;
             if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp')
                 this.keyW = true;
             if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown')
@@ -1417,8 +1789,14 @@ class SnowSlideTPSMasterEngine {
             }
             if (e.key === ' ')
                 triggerJump();
-            if ((e.key === 'e' || e.key === 'E') && this.currentScene === 'HUB' && this.nearCableCar) {
-                this.startCableCarClimb();
+            // Tecla E para interagir com Lojinha ou Bondinho
+            if ((e.key === 'e' || e.key === 'E') && this.currentScene === 'HUB') {
+                if (this.nearShop) {
+                    this.openShopModal();
+                }
+                else if (this.nearCableCar) {
+                    this.startCableCarClimb();
+                }
             }
         });
         window.addEventListener('keyup', (e) => {
@@ -1463,8 +1841,11 @@ class SnowSlideTPSMasterEngine {
                     .addScaledVector(forward, inputForward)
                     .addScaledVector(lateral, inputLateral)
                     .normalize();
-                this.playerPosX += moveDir.x * moveSpeed;
-                this.playerPosZ += moveDir.z * moveSpeed;
+                const desiredX = this.playerPosX + moveDir.x * moveSpeed;
+                const desiredZ = this.playerPosZ + moveDir.z * moveSpeed;
+                const resolved = this.resolveHubCollisions(desiredX, desiredZ, 0.85);
+                this.playerPosX = resolved.x;
+                this.playerPosZ = resolved.z;
                 this.playerGroup.rotation.y = Math.atan2(moveDir.x, moveDir.z);
                 // Animação de caminhada/corrida dos membros do pinguim
                 this.walkTime += running ? 0.28 : 0.16;
@@ -1491,11 +1872,14 @@ class SnowSlideTPSMasterEngine {
                     this.emitSnowSpray(8, 0);
                 }
             }
-            this.playerPosX = Math.max(-120, Math.min(120, this.playerPosX));
-            this.playerPosZ = Math.max(-120, Math.min(120, this.playerPosZ));
+            // Clamping de segurança
+            const bounds = 44;
+            this.playerPosX = Math.max(-bounds, Math.min(bounds, this.playerPosX));
+            this.playerPosZ = Math.max(-bounds, Math.min(bounds, this.playerPosZ));
             this.playerGroup.position.set(this.playerPosX, this.playerPosY, this.playerPosZ);
             // Verificação de proximidade da Estação do Bondinho
-            const distToStation = this.cableCarStationPos.distanceTo(new THREE.Vector3(this.playerPosX, 0, this.playerPosZ));
+            const boardingGatePos = new THREE.Vector3(22, 0, -14);
+            const distToStation = boardingGatePos.distanceTo(new THREE.Vector3(this.playerPosX, 0, this.playerPosZ));
             const promptEl = document.getElementById('cable-car-prompt');
             if (distToStation < 7.0) {
                 this.nearCableCar = true;
@@ -1504,6 +1888,23 @@ class SnowSlideTPSMasterEngine {
             else {
                 this.nearCableCar = false;
                 promptEl.style.display = 'none';
+            }
+            // Verificação de proximidade da Lojinha Alpina Física
+            const distToShop = this.shopInteractionPos.distanceTo(new THREE.Vector3(this.playerPosX, 0, this.playerPosZ));
+            const shopPromptEl = document.getElementById('shop-prompt');
+            if (shopPromptEl) {
+                if (distToShop < 5.8) {
+                    this.nearShop = true;
+                    shopPromptEl.style.display = 'block';
+                }
+                else {
+                    this.nearShop = false;
+                    shopPromptEl.style.display = 'none';
+                }
+            }
+            // Animação acolhedora do Lojista Pingo
+            if (this.merchantPenguin) {
+                this.merchantPenguin.rotation.y = Math.sin(Date.now() * 0.002) * 0.18;
             }
             // Animação das fagulhas da fogueira
             if (this.bonfireEmbers && this.bonfireLight) {

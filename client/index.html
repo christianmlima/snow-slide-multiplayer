@@ -259,6 +259,28 @@
     #cable-car-prompt strong { color: #38bdf8; font-size: 1.05rem; display: block; margin-bottom: 2px; }
     #cable-car-prompt span { font-size: 0.82rem; color: #94a3b8; }
 
+    /* Prompt Interativo da Lojinha Alpina */
+    #shop-prompt {
+      position: absolute;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.94);
+      border: 2px solid #facc15;
+      box-shadow: 0 10px 30px rgba(234, 179, 8, 0.3);
+      border-radius: 16px;
+      padding: 12px 22px;
+      color: white;
+      text-align: center;
+      z-index: 25;
+      display: none;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    #shop-prompt:hover { transform: translateX(-50%) scale(1.03); border-color: #fef08a; }
+    #shop-prompt strong { color: #facc15; font-size: 1.05rem; display: block; margin-bottom: 2px; }
+    #shop-prompt span { font-size: 0.82rem; color: #cbd5e1; }
+
     /* Cutscene / Transição do Bondinho */
     #cable-car-cutscene {
       position: absolute;
@@ -417,7 +439,7 @@
 <body>
 
   <!-- Badge com o Número da Versão Ativa -->
-  <div id="version-badge">v1.7.0-STABLE</div>
+  <div id="version-badge">v1.8.0-STABLE</div>
 
   <!-- Tela de Login -->
   <div id="login-screen" class="screen">
@@ -434,12 +456,14 @@
   <div id="hub-ui">
     <h2>🏔️ Vila Alpina</h2>
     <span class="stat">💰 <span id="currency-val">1250</span> pts</span>
-    <button id="open-shop-btn" class="mini-btn">🛒 Lojinha Alpina</button>
-    <button id="open-inventory-btn" class="mini-btn" style="background:#475569;">🎒 Meus Equipamentos</button>
-    <div style="margin-top: 10px; font-size: 0.72rem; color: #94a3b8; line-height: 1.3;">
+    <button id="open-inventory-btn" class="mini-btn" style="background:#0284c7;">🎒 Meus Equipamentos [Tab]</button>
+    <button id="open-shop-btn" class="mini-btn" style="background:#475569;">🛒 Lojinha (No Chalé)</button>
+    <div style="margin-top: 10px; font-size: 0.72rem; color: #94a3b8; line-height: 1.4;">
       🚶 <strong>Andar:</strong> W,A,S,D / Analógico<br>
       🏃 <strong>Correr:</strong> Segure Shift<br>
-      🚠 Suba de <strong>Bondinho</strong> para correr!
+      🎒 <strong>Equipamentos:</strong> Pressione <strong>Tab</strong><br>
+      🛒 <strong>Lojinha:</strong> Vá ao balcão e aperte <strong>E</strong><br>
+      🚠 <strong>Bondinho:</strong> Vá à estação e aperte <strong>E</strong>
     </div>
   </div>
 
@@ -455,6 +479,12 @@
   <div id="cable-car-prompt">
     <strong>🚠 Subir no Bondinho [Pressione E]</strong>
     <span>Ir ao pico da montanha para iniciar a descida de corrida</span>
+  </div>
+
+  <!-- Prompt de Interação da Lojinha Alpina Física -->
+  <div id="shop-prompt">
+    <strong>🛒 Lojinha Alpina [Pressione E]</strong>
+    <span>Fale com o lojista Pingo para comprar novos equipamentos e trenós!</span>
   </div>
 
   <!-- Cutscene do Bondinho Subindo o Morro -->
