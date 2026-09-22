@@ -2,9 +2,22 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import { GameState } from '@snow-slide/shared';
 
-const GAME_VERSION = "v2.4.0-STABLE";
+const GAME_VERSION = "v2.5.0-STABLE";
 
 type CharacterId = 'penguin' | 'frog' | 'cat' | 'dog';
+
+interface CharacterRig {
+  root: THREE.Group;
+  torso: THREE.Group;
+  head: THREE.Group;
+  armL: THREE.Object3D;
+  armR: THREE.Object3D;
+  footL: THREE.Object3D;
+  footR: THREE.Object3D;
+  tail: THREE.Object3D | null;
+  scarfTail: THREE.Mesh | null;
+  handSnowball?: THREE.Mesh | null;
+}
 
 interface ShopItem {
   id: string;
@@ -50,6 +63,7 @@ interface WanderingNPC {
   state: 'walking' | 'idle' | 'hit';
   reactionTimer: number;
   yVel: number;
+  rig?: CharacterRig;
 }
 
 interface BenchSpot {
@@ -65,6 +79,7 @@ interface ActiveSnowball {
   vz: number;
   life: number;
   isEnemy?: boolean;
+  gravity: number;
 }
 
 // Alvos do Estande de Tiro ao Alvo (Circo/Festival)
@@ -82,29 +97,27 @@ interface CarnivalTarget {
   hitTimer: number;
 }
 
-// Bots Adversários da Arena de Guerra de Neve
+// Bots Adversários da Arena de Guerra de Neve (com Rig Esquelético Animal Crossing)
 interface WarBot {
   id: string;
   name: string;
   type: CharacterId;
   group: THREE.Group;
-  torso: THREE.Group;
-  head: THREE.Group;
-  armL: THREE.Mesh;
-  armR: THREE.Mesh;
-  footL: THREE.Mesh;
-  footR: THREE.Mesh;
-  tail: THREE.Mesh | null;
+  rig: CharacterRig;
   pos: THREE.Vector3;
   rotY: number;
   health: number;
   maxHealth: number;
-  state: 'patrol' | 'cover' | 'aim' | 'frozen';
+  state: 'patrol' | 'skirmish' | 'windup' | 'throw' | 'frozen';
   stateTimer: number;
   targetPos: THREE.Vector3;
   invulnTimer: number;
   iceCube: THREE.Mesh | null;
   walkTime: number;
+  strafeDir: number;
+  throwCooldown: number;
+  hitTimer: number;
+  isMoving: boolean;
 }
 
 // Obstáculos e Muretas do Labirinto de Neve
@@ -171,6 +184,9 @@ class SnowSlideTPSMasterEngine {
   private isChargingSnowball = false;
   private snowballChargeStartTime = 0;
   private currentChargeRatio = 0.5;
+  private playerRig: CharacterRig | null = null;
+  private throwAnimTimer = 0;
+  private maxThrowAnimFrames = 18;
 
   // Minigame 1: Estande de Tiro ao Alvo do Festival
   private nearCarnivalBooth = false;
@@ -834,6 +850,15 @@ class SnowSlideTPSMasterEngine {
 
     this.charArmL = createAnimalCrossingFlipper(-1);
     this.charArmR = createAnimalCrossingFlipper(1);
+
+    const handSnowball = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 })
+    );
+    handSnowball.position.set(0, -0.32, 0.10);
+    handSnowball.visible = false;
+    this.charArmR.add(handSnowball);
+
     this.charTorso.add(this.charArmL, this.charArmR);
 
     // Rabinho arredondado de fofura
@@ -870,6 +895,20 @@ class SnowSlideTPSMasterEngine {
     this.charFootL = createAnimalCrossingFoot(-0.22);
     this.charFootR = createAnimalCrossingFoot(0.22);
     root.add(this.charFootL, this.charFootR);
+
+    const rig: CharacterRig = {
+      root,
+      torso: this.charTorso,
+      head: this.charHead,
+      armL: this.charArmL,
+      armR: this.charArmR,
+      footL: this.charFootL,
+      footR: this.charFootR,
+      tail: this.charTail as any,
+      scarfTail: this.charScarfTail,
+      handSnowball
+    };
+    root.userData.rig = rig;
 
     return root;
   }
@@ -981,6 +1020,15 @@ class SnowSlideTPSMasterEngine {
 
     this.charArmL = createAnimalCrossingFrogArm(-1);
     this.charArmR = createAnimalCrossingFrogArm(1);
+
+    const handSnowball = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 })
+    );
+    handSnowball.position.set(0, -0.32, 0.10);
+    handSnowball.visible = false;
+    this.charArmR.add(handSnowball);
+
     this.charTorso.add(this.charArmL, this.charArmR);
     root.add(this.charTorso);
 
@@ -1007,6 +1055,21 @@ class SnowSlideTPSMasterEngine {
     this.charFootR = createAnimalCrossingFrogFoot(0.24);
     root.add(this.charFootL, this.charFootR);
     this.charTail = null;
+
+    const rig: CharacterRig = {
+      root,
+      torso: this.charTorso,
+      head: this.charHead,
+      armL: this.charArmL,
+      armR: this.charArmR,
+      footL: this.charFootL,
+      footR: this.charFootR,
+      tail: null,
+      scarfTail: this.charScarfTail,
+      handSnowball
+    };
+    root.userData.rig = rig;
+
     return root;
   }
 
@@ -1152,6 +1215,15 @@ class SnowSlideTPSMasterEngine {
 
     this.charArmL = createAnimalCrossingCatArm(-1);
     this.charArmR = createAnimalCrossingCatArm(1);
+
+    const handSnowball = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 })
+    );
+    handSnowball.position.set(0, -0.32, 0.10);
+    handSnowball.visible = false;
+    this.charArmR.add(handSnowball);
+
     this.charTorso.add(this.charArmL, this.charArmR);
 
     // Cauda longa elegante e curva estilo Animal Crossing
@@ -1191,6 +1263,20 @@ class SnowSlideTPSMasterEngine {
     this.charFootL = createAnimalCrossingCatFoot(-0.20);
     this.charFootR = createAnimalCrossingCatFoot(0.20);
     root.add(this.charFootL, this.charFootR);
+
+    const rig: CharacterRig = {
+      root,
+      torso: this.charTorso,
+      head: this.charHead,
+      armL: this.charArmL,
+      armR: this.charArmR,
+      footL: this.charFootL,
+      footR: this.charFootR,
+      tail: this.charTail as any,
+      scarfTail: this.charScarfTail,
+      handSnowball
+    };
+    root.userData.rig = rig;
 
     return root;
   }
@@ -1332,6 +1418,15 @@ class SnowSlideTPSMasterEngine {
 
     this.charArmL = createAnimalCrossingDogArm(-1);
     this.charArmR = createAnimalCrossingDogArm(1);
+
+    const handSnowball = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 })
+    );
+    handSnowball.position.set(0, -0.32, 0.10);
+    handSnowball.visible = false;
+    this.charArmR.add(handSnowball);
+
     this.charTorso.add(this.charArmL, this.charArmR);
 
     // Rabinho pom-pom exuberante enrolado nas costas
@@ -1366,6 +1461,21 @@ class SnowSlideTPSMasterEngine {
     this.charFootL = createAnimalCrossingDogFoot(-0.21);
     this.charFootR = createAnimalCrossingDogFoot(0.21);
     root.add(this.charFootL, this.charFootR);
+
+    const rig: CharacterRig = {
+      root,
+      torso: this.charTorso,
+      head: this.charHead,
+      armL: this.charArmL,
+      armR: this.charArmR,
+      footL: this.charFootL,
+      footR: this.charFootR,
+      tail: this.charTail as any,
+      scarfTail: this.charScarfTail,
+      handSnowball
+    };
+    root.userData.rig = rig;
+
     return root;
   }
 
@@ -1567,17 +1677,35 @@ class SnowSlideTPSMasterEngine {
 
   // Criação do Modelo Ativo Escolhido
   private createCurrentCharacterModel(): THREE.Group {
+    let group: THREE.Group;
     switch (this.selectedCharacter) {
       case 'frog':
-        return this.createDetailedFrog();
+        group = this.createDetailedFrog();
+        break;
       case 'cat':
-        return this.createDetailedCat();
+        group = this.createDetailedCat();
+        break;
       case 'dog':
-        return this.createDetailedDog();
+        group = this.createDetailedDog();
+        break;
       case 'penguin':
       default:
-        return this.createDetailedPenguin();
+        group = this.createDetailedPenguin();
+        break;
     }
+    const rig = group.userData.rig as CharacterRig;
+    if (rig) {
+      this.playerRig = rig;
+      this.charTorso = rig.torso;
+      this.charHead = rig.head;
+      this.charArmL = rig.armL as THREE.Mesh;
+      this.charArmR = rig.armR as THREE.Mesh;
+      this.charFootL = rig.footL as THREE.Mesh;
+      this.charFootR = rig.footR as THREE.Mesh;
+      this.charTail = rig.tail;
+      this.charScarfTail = rig.scarfTail;
+    }
+    return group;
   }
 
   // Montagem do Avatar (a pé no Hub, montado no veículo na corrida)
@@ -1604,89 +1732,340 @@ class SnowSlideTPSMasterEngine {
     if (this.playerGroup) this.scene.remove(this.playerGroup);
     this.playerGroup = this.createAvatarAssembly();
     this.scene.add(this.playerGroup);
+    if (this.playerRig) {
+      this.charTorso = this.playerRig.torso;
+      this.charHead = this.playerRig.head;
+      this.charArmL = this.playerRig.armL as THREE.Mesh;
+      this.charArmR = this.playerRig.armR as THREE.Mesh;
+      this.charFootL = this.playerRig.footL as THREE.Mesh;
+      this.charFootR = this.playerRig.footR as THREE.Mesh;
+      this.charTail = this.playerRig.tail;
+      this.charScarfTail = this.playerRig.scarfTail;
+    }
   }
 
-  // Animação Procedural Estilo Animal Crossing (Joyful Waddle, Head Bob & Idle Breathing)
-  private animateCharacterWalk(time: number, running: boolean) {
-    if (!this.charFootL || !this.charFootR || !this.charTorso) return;
+  // =========================================================================
+  // SISTEMA DE ANIMAÇÃO ESQUELÉTICA PROCEDURAL (ANIMAL CROSSING CHIBI RIG)
+  // =========================================================================
+  private animateRigWalk(
+    rig: CharacterRig,
+    time: number,
+    running: boolean,
+    isCharging = false,
+    chargeRatio = 0,
+    throwTimer = 0
+  ) {
+    if (!rig.footL || !rig.footR || !rig.torso) return;
 
     const freq = running ? 1.6 : 1.0;
     const t = time * freq;
 
-    // Passos patinados com leve rotação
-    this.charFootL.position.z = Math.sin(t) * 0.25;
-    this.charFootL.position.y = Math.max(0, Math.cos(t) * 0.15);
+    // Passos patinados com elevação orgânica estilo Animal Crossing
+    rig.footL.position.z = Math.sin(t) * (running ? 0.30 : 0.22);
+    rig.footL.position.y = Math.max(0, Math.cos(t) * (running ? 0.18 : 0.14));
+    rig.footL.rotation.x = -Math.sin(t) * 0.28;
 
-    this.charFootR.position.z = -Math.sin(t) * 0.25;
-    this.charFootR.position.y = Math.max(0, -Math.cos(t) * 0.15);
+    rig.footR.position.z = -Math.sin(t) * (running ? 0.30 : 0.22);
+    rig.footR.position.y = Math.max(0, -Math.cos(t) * (running ? 0.18 : 0.14));
+    rig.footR.rotation.x = Math.sin(t) * 0.28;
 
-    // Ginga clássico de corpo de Animal Crossing (waddle)
-    this.charTorso.rotation.z = Math.sin(t) * (running ? 0.18 : 0.13);
-    this.charTorso.position.y = Math.abs(Math.sin(t * 2)) * (running ? 0.07 : 0.05);
+    const isThrowing = throwTimer > 0;
+    const isChargingThrow = isCharging && !isThrowing;
 
-    // Movimento de cabeça característico do Animal Crossing (head tilt curioso / alegre)
-    if (this.charHead) {
-      this.charHead.rotation.z = -Math.sin(t) * (running ? 0.16 : 0.12);
-      this.charHead.rotation.y = Math.sin(t) * 0.08;
+    if (isThrowing) {
+      // Snap vigoroso para frente e follow-through dinâmico em movimento
+      const progress = 1.0 - (throwTimer / this.maxThrowAnimFrames);
+      if (progress < 0.35) {
+        const snapT = progress / 0.35;
+        rig.torso.rotation.y = -0.35 + snapT * 0.75;
+        rig.torso.rotation.x = snapT * 0.18;
+        rig.torso.rotation.z = Math.sin(t) * 0.08;
+        if (rig.armR) {
+          rig.armR.rotation.x = -1.6 + snapT * 3.25;
+          rig.armR.rotation.y = -0.25 * snapT;
+          rig.armR.rotation.z = -0.20;
+        }
+        if (rig.armL) {
+          rig.armL.rotation.x = 1.0 - snapT * 1.6;
+          rig.armL.rotation.z = 0.30;
+        }
+      } else {
+        const blend = (progress - 0.35) / 0.65;
+        rig.torso.rotation.y = 0.40 * (1 - blend);
+        rig.torso.rotation.x = 0.18 * (1 - blend);
+        rig.torso.rotation.z = Math.sin(t) * (running ? 0.18 : 0.13);
+        if (rig.armR) {
+          rig.armR.rotation.x = 1.65 * (1 - blend) + (-Math.sin(t) * 0.6) * blend;
+          rig.armR.rotation.y = 0;
+          rig.armR.rotation.z = -0.38;
+        }
+        if (rig.armL) {
+          rig.armL.rotation.x = -0.6 * (1 - blend) + (Math.sin(t) * 0.6) * blend;
+          rig.armL.rotation.y = 0;
+          rig.armL.rotation.z = 0.38;
+        }
+      }
+      if (rig.handSnowball) rig.handSnowball.visible = false;
+    } else if (isChargingThrow) {
+      // Postura tática enquanto corre ou anda: braço direito puxado atrás com bola, outro apontando
+      const c = chargeRatio;
+      rig.torso.rotation.y = -0.42 * c;
+      rig.torso.rotation.x = -0.08 * c;
+      rig.torso.rotation.z = Math.sin(t) * 0.08;
+
+      if (rig.head) {
+        rig.head.rotation.y = 0.42 * c;
+        rig.head.rotation.z = 0;
+      }
+
+      if (rig.armR) {
+        rig.armR.rotation.x = -1.6 - c * 0.65;
+        rig.armR.rotation.y = 0.35;
+        rig.armR.rotation.z = -0.45 - c * 0.25;
+      }
+
+      if (rig.armL) {
+        rig.armL.rotation.x = 1.15;
+        rig.armL.rotation.y = 0.20;
+        rig.armL.rotation.z = 0.25;
+      }
+
+      if (rig.handSnowball) {
+        rig.handSnowball.visible = true;
+        rig.handSnowball.scale.setScalar(0.75 + c * 0.55);
+      }
+    } else {
+      // Caminhada / corrida alegre estilo Animal Crossing (waddle)
+      rig.torso.rotation.z = Math.sin(t) * (running ? 0.18 : 0.13);
+      rig.torso.rotation.y = 0;
+      rig.torso.rotation.x = 0;
+
+      if (rig.head) {
+        rig.head.rotation.z = -Math.sin(t) * (running ? 0.16 : 0.12);
+        rig.head.rotation.y = Math.sin(t) * 0.08;
+      }
+
+      if (rig.armL && rig.armR) {
+        rig.armL.rotation.x = Math.sin(t) * (running ? 0.75 : 0.55);
+        rig.armR.rotation.x = -Math.sin(t) * (running ? 0.75 : 0.55);
+        rig.armL.rotation.y = 0;
+        rig.armR.rotation.y = 0;
+        rig.armL.rotation.z = 0.38 + Math.abs(Math.sin(t)) * 0.12;
+        rig.armR.rotation.z = -0.38 - Math.abs(Math.sin(t)) * 0.12;
+      }
+
+      if (rig.handSnowball) rig.handSnowball.visible = false;
     }
 
-    // Balanço entusiasmado dos bracinhos / asinhas
-    if (this.charArmL && this.charArmR) {
-      this.charArmL.rotation.x = Math.sin(t) * (running ? 0.75 : 0.55);
-      this.charArmR.rotation.x = -Math.sin(t) * (running ? 0.75 : 0.55);
-      this.charArmL.rotation.z = 0.38 + Math.abs(Math.sin(t)) * 0.12;
-      this.charArmR.rotation.z = -0.38 - Math.abs(Math.sin(t)) * 0.12;
+    rig.torso.position.y = Math.abs(Math.sin(t * 2)) * (running ? 0.08 : 0.05);
+
+    if (rig.tail) {
+      rig.tail.rotation.y = Math.sin(t * 2.2) * 0.42;
     }
 
-    // Rabinho abanando alegremente
-    if (this.charTail) {
-      this.charTail.rotation.y = Math.sin(t * 2.2) * 0.42;
+    if (rig.scarfTail) {
+      rig.scarfTail.rotation.y = 0.25 + Math.sin(t * 1.5) * 0.25;
+    }
+  }
+
+  private animateRigIdle(
+    rig: CharacterRig,
+    isSitting = false,
+    isCharging = false,
+    chargeRatio = 0,
+    throwTimer = 0
+  ) {
+    if (!rig.footL || !rig.footR || !rig.torso) return;
+
+    if (isSitting) {
+      rig.footL.position.set(-0.20, 0.05, 0.38);
+      rig.footR.position.set(0.20, 0.05, 0.38);
+      rig.footL.rotation.set(0, -0.18, 0);
+      rig.footR.rotation.set(0, 0.18, 0);
+      rig.torso.rotation.set(0, 0, 0);
+      rig.torso.position.y = -0.05;
+      rig.torso.scale.set(1, 1, 1);
+      if (rig.head) rig.head.rotation.set(0, 0, 0);
+      if (rig.armL && rig.armR) {
+        rig.armL.rotation.set(0.4, 0, 0.2);
+        rig.armR.rotation.set(0.4, 0, -0.2);
+      }
+      if (rig.handSnowball) rig.handSnowball.visible = false;
+      return;
     }
 
-    if (this.charScarfTail) {
-      this.charScarfTail.rotation.y = 0.25 + Math.sin(t * 1.5) * 0.25;
+    const isThrowing = throwTimer > 0;
+    const isChargingThrow = isCharging && !isThrowing;
+
+    rig.footL.position.set(-0.22, 0.04, 0.08);
+    rig.footR.position.set(0.22, 0.04, 0.08);
+    rig.footL.rotation.set(0, -0.18, 0);
+    rig.footR.rotation.set(0, 0.18, 0);
+
+    if (isThrowing) {
+      const progress = 1.0 - (throwTimer / this.maxThrowAnimFrames);
+      if (progress < 0.35) {
+        const snapT = progress / 0.35;
+        rig.torso.rotation.y = -0.35 + snapT * 0.75;
+        rig.torso.rotation.x = snapT * 0.18;
+        rig.torso.rotation.z = 0;
+        if (rig.armR) {
+          rig.armR.rotation.x = -1.6 + snapT * 3.25;
+          rig.armR.rotation.y = -0.25 * snapT;
+          rig.armR.rotation.z = -0.20;
+        }
+        if (rig.armL) {
+          rig.armL.rotation.x = 1.0 - snapT * 1.6;
+          rig.armL.rotation.z = 0.30;
+        }
+      } else {
+        const blend = (progress - 0.35) / 0.65;
+        rig.torso.rotation.y = 0.40 * (1 - blend);
+        rig.torso.rotation.x = 0.18 * (1 - blend);
+        rig.torso.rotation.z = 0;
+        if (rig.armR) {
+          rig.armR.rotation.x = 1.65 * (1 - blend) + (-0.15) * blend;
+          rig.armR.rotation.y = 0;
+          rig.armR.rotation.z = -0.32;
+        }
+        if (rig.armL) {
+          rig.armL.rotation.x = -0.6 * (1 - blend) + (-0.15) * blend;
+          rig.armL.rotation.y = 0;
+          rig.armL.rotation.z = 0.32;
+        }
+      }
+      if (rig.handSnowball) rig.handSnowball.visible = false;
+    } else if (isChargingThrow) {
+      const c = chargeRatio;
+      rig.torso.rotation.y = -0.42 * c;
+      rig.torso.rotation.x = -0.08 * c;
+      rig.torso.rotation.z = 0;
+      rig.torso.position.y = 0;
+
+      if (rig.head) {
+        rig.head.rotation.y = 0.42 * c;
+        rig.head.rotation.z = 0;
+      }
+
+      if (rig.armR) {
+        rig.armR.rotation.x = -1.6 - c * 0.65;
+        rig.armR.rotation.y = 0.35;
+        rig.armR.rotation.z = -0.45 - c * 0.25;
+      }
+
+      if (rig.armL) {
+        rig.armL.rotation.x = 1.15;
+        rig.armL.rotation.y = 0.20;
+        rig.armL.rotation.z = 0.25;
+      }
+
+      if (rig.handSnowball) {
+        rig.handSnowball.visible = true;
+        rig.handSnowball.scale.setScalar(0.75 + c * 0.55);
+      }
+    } else {
+      const now = Date.now();
+      const breathe = Math.sin(now * 0.0035);
+      rig.torso.scale.set(1.0 - breathe * 0.015, 1.0 + breathe * 0.022, 1.0 - breathe * 0.015);
+      rig.torso.rotation.set(0, 0, 0);
+      rig.torso.position.y = 0;
+
+      if (rig.head) {
+        rig.head.rotation.z = Math.sin(now * 0.0018) * 0.04;
+        rig.head.rotation.y = Math.sin(now * 0.0012) * 0.03;
+      }
+
+      if (rig.armL && rig.armR) {
+        rig.armL.rotation.set(-0.15, 0, 0.32);
+        rig.armR.rotation.set(-0.15, 0, -0.32);
+      }
+
+      if (rig.tail) {
+        rig.tail.rotation.y = Math.sin(now * 0.0025) * 0.18;
+      }
+
+      if (rig.handSnowball) rig.handSnowball.visible = false;
+    }
+  }
+
+  private animateRigFlinch(rig: CharacterRig) {
+    if (!rig) return;
+    rig.torso.rotation.set(-0.35, 0, 0);
+    rig.torso.position.y = 0.12;
+    if (rig.head) rig.head.rotation.set(-0.25, 0, 0);
+    if (rig.armL) rig.armL.rotation.set(1.1, 0, 0.5);
+    if (rig.armR) rig.armR.rotation.set(1.1, 0, -0.5);
+    if (rig.handSnowball) rig.handSnowball.visible = false;
+  }
+
+  private animateBot(bot: WarBot) {
+    const rig = bot.rig;
+    if (!rig) return;
+
+    if (bot.state === 'frozen') {
+      rig.torso.rotation.set(0.15, 0, 0.1);
+      rig.torso.position.y = 0.05;
+      if (rig.head) rig.head.rotation.set(-0.25, 0.2, 0);
+      if (rig.armL) rig.armL.rotation.set(0.9, 0, 1.1);
+      if (rig.armR) rig.armR.rotation.set(0.9, 0, -1.1);
+      if (rig.footL) rig.footL.position.set(-0.24, 0.12, 0.2);
+      if (rig.footR) rig.footR.position.set(0.24, 0.02, -0.1);
+      if (rig.handSnowball) rig.handSnowball.visible = false;
+      return;
+    }
+
+    if (bot.hitTimer > 0) {
+      const hitT = bot.hitTimer / 18;
+      rig.torso.rotation.set(-0.35 * hitT, 0, 0);
+      rig.torso.position.y = 0.12 * hitT;
+      if (rig.head) rig.head.rotation.set(-0.3 * hitT, 0, 0);
+      if (rig.armL) rig.armL.rotation.set(1.2 * hitT, 0, 0.6);
+      if (rig.armR) rig.armR.rotation.set(1.2 * hitT, 0, -0.6);
+      if (rig.handSnowball) rig.handSnowball.visible = false;
+      return;
+    }
+
+    if (bot.state === 'windup') {
+      const p = Math.min(1.0, 1.0 - (bot.stateTimer / 22));
+      this.animateRigIdle(rig, false, true, p, 0);
+      return;
+    }
+
+    if (bot.state === 'throw') {
+      this.animateRigIdle(rig, false, false, 0, bot.stateTimer);
+      return;
+    }
+
+    if (bot.isMoving) {
+      this.animateRigWalk(rig, bot.walkTime, true, false, 0, 0);
+    } else {
+      this.animateRigIdle(rig, false, false, 0, 0);
+    }
+  }
+
+  // Animação do Personagem do Jogador
+  private animateCharacterWalk(time: number, running: boolean) {
+    if (this.playerRig) {
+      this.animateRigWalk(
+        this.playerRig,
+        time,
+        running,
+        this.isChargingSnowball,
+        this.currentChargeRatio,
+        this.throwAnimTimer
+      );
     }
   }
 
   private animateCharacterIdle() {
-    if (!this.charFootL || !this.charFootR || !this.charTorso) return;
-
-    if (this.isSitting) {
-      this.charFootL.position.set(-0.20, 0.05, 0.38);
-      this.charFootR.position.set(0.20, 0.05, 0.38);
-      this.charTorso.rotation.z = 0;
-      this.charTorso.position.y = -0.05;
-      this.charTorso.scale.set(1, 1, 1);
-      if (this.charHead) this.charHead.rotation.set(0, 0, 0);
-      if (this.charArmL && this.charArmR) {
-        this.charArmL.rotation.set(0.4, 0, 0.2);
-        this.charArmR.rotation.set(0.4, 0, -0.2);
-      }
-      return;
-    }
-
-    const now = Date.now();
-    // Respiração suave com squish & stretch orgânico estilo pelúcia
-    const breathe = Math.sin(now * 0.0035);
-    this.charTorso.scale.set(1.0 - breathe * 0.015, 1.0 + breathe * 0.022, 1.0 - breathe * 0.015);
-
-    this.charFootL.position.set(-0.22, 0.04, 0.08);
-    this.charFootR.position.set(0.22, 0.04, 0.08);
-    this.charTorso.rotation.z = 0;
-    this.charTorso.position.y = 0;
-
-    // Leve inclinação de cabeça curiosa em repouso
-    if (this.charHead) {
-      this.charHead.rotation.z = Math.sin(now * 0.0018) * 0.04;
-      this.charHead.rotation.y = Math.sin(now * 0.0012) * 0.03;
-    }
-
-    if (this.charArmL && this.charArmR) {
-      this.charArmL.rotation.set(-0.15, 0, 0.32);
-      this.charArmR.rotation.set(-0.15, 0, -0.32);
-    }
-    if (this.charTail) {
-      this.charTail.rotation.y = Math.sin(now * 0.0025) * 0.18;
+    if (this.playerRig) {
+      this.animateRigIdle(
+        this.playerRig,
+        this.isSitting,
+        this.isChargingSnowball,
+        this.currentChargeRatio,
+        this.throwAnimTimer
+      );
     }
   }
 
@@ -1875,7 +2254,8 @@ class SnowSlideTPSMasterEngine {
       tail: null,
       state: 'walking',
       reactionTimer: 0,
-      yVel: 0
+      yVel: 0,
+      rig: pip.userData.rig as CharacterRig
     });
 
     // 2. Kero - O Sapo das Neves (Sapo Cururu Verde saltitante)
@@ -1906,7 +2286,8 @@ class SnowSlideTPSMasterEngine {
       tail: null,
       state: 'walking',
       reactionTimer: 0,
-      yVel: 0
+      yVel: 0,
+      rig: kero.userData.rig as CharacterRig
     });
 
     // 3. Mimi - A Gatinha Siamesa Elegante
@@ -1937,7 +2318,8 @@ class SnowSlideTPSMasterEngine {
       tail: (mimi.children[0] as THREE.Group).children[5] as THREE.Mesh,
       state: 'walking',
       reactionTimer: 0,
-      yVel: 0
+      yVel: 0,
+      rig: mimi.userData.rig as CharacterRig
     });
 
     // 4. Toby - O Cachorrinho Shih Tzu Aventureiro
@@ -1967,8 +2349,21 @@ class SnowSlideTPSMasterEngine {
       tail: (toby.children[0] as THREE.Group).children[5] as THREE.Mesh,
       state: 'walking',
       reactionTimer: 0,
-      yVel: 0
+      yVel: 0,
+      rig: toby.userData.rig as CharacterRig
     });
+
+    // Restaura o playerRig para que a criação de NPCs não sobrescreva os membros do jogador
+    if (this.playerRig) {
+      this.charTorso = this.playerRig.torso;
+      this.charHead = this.playerRig.head;
+      this.charArmL = this.playerRig.armL as THREE.Mesh;
+      this.charArmR = this.playerRig.armR as THREE.Mesh;
+      this.charFootL = this.playerRig.footL as THREE.Mesh;
+      this.charFootR = this.playerRig.footR as THREE.Mesh;
+      this.charTail = this.playerRig.tail;
+      this.charScarfTail = this.playerRig.scarfTail;
+    }
   }
 
   private updateWanderingNPCs() {
@@ -1981,6 +2376,9 @@ class SnowSlideTPSMasterEngine {
         if (npc.mesh.position.y <= 0) {
           npc.mesh.position.y = 0;
           npc.yVel = 0;
+        }
+        if (npc.rig) {
+          this.animateRigFlinch(npc.rig);
         }
         if (npc.reactionTimer <= 0) {
           npc.state = 'walking';
@@ -2009,27 +2407,15 @@ class SnowSlideTPSMasterEngine {
         npc.mesh.rotation.y += diffRot * 0.15;
 
         npc.walkTime += 0.18;
-        const t = npc.walkTime;
 
-        if (npc.footL && npc.footR) {
+        if (npc.rig) {
+          this.animateRigWalk(npc.rig, npc.walkTime, false, false, 0, 0);
+        } else if (npc.footL && npc.footR) {
+          const t = npc.walkTime;
           npc.footL.position.z = Math.sin(t) * 0.22;
           npc.footL.position.y = Math.max(0, Math.cos(t) * 0.12);
           npc.footR.position.z = -Math.sin(t) * 0.22;
           npc.footR.position.y = Math.max(0, -Math.cos(t) * 0.12);
-        }
-
-        if (npc.torso) {
-          npc.torso.rotation.z = Math.sin(t) * 0.12;
-          npc.torso.position.y = Math.abs(Math.sin(t * 2)) * 0.04;
-        }
-
-        if (npc.armL && npc.armR) {
-          npc.armL.rotation.z = 0.38 + Math.sin(t) * 0.22;
-          npc.armR.rotation.z = -0.38 + Math.sin(t) * 0.22;
-        }
-
-        if (npc.tail) {
-          npc.tail.rotation.y = Math.sin(t * 1.8) * 0.32;
         }
       }
     }
@@ -2040,16 +2426,20 @@ class SnowSlideTPSMasterEngine {
   // =========================================================================
   // =========================================================================
   // ARREMESSO DE BOLAS DE NEVE (FÍSICA BALÍSTICA SUAVE & CARGA DE FORÇA)
+  // Quanto mais segurar, mais rápido e reto (trajetória laser/dardo)
   // =========================================================================
   private throwSnowball(chargeRatio = 0.5) {
     if (this.currentScene !== 'HUB' && this.currentScene !== 'SNOWBALL_WAR') return;
     if (this.isAnyModalOpen()) return;
 
     const now = Date.now();
-    if (now - this.lastSnowballTime < 200) return;
+    if (now - this.lastSnowballTime < 180) return;
     this.lastSnowballTime = now;
 
-    const c = Math.max(0.2, Math.min(1.0, chargeRatio));
+    const c = Math.max(0.15, Math.min(1.0, chargeRatio));
+
+    // Aciona animação de follow-through esquelético do jogador
+    this.throwAnimTimer = this.maxThrowAnimFrames;
 
     // Direção da mira da câmera
     const cosPitch = Math.cos(this.cameraAngleX);
@@ -2057,20 +2447,33 @@ class SnowSlideTPSMasterEngine {
     const sinYaw = Math.sin(this.cameraAngleY);
     const cosYaw = Math.cos(this.cameraAngleY);
 
-    // Velocidade proporcional à carga (entre 0.38 e 0.82)
-    const speed = 0.38 + c * 0.44;
+    // FÍSICA BALÍSTICA DINÂMICA:
+    // Mais carga = arremesso mais RÁPIDO, mais RETO (trajetória plana/laser) e menor queda de gravidade!
+    // Pouca carga (toque rápido) = arco parabólico suave (lob)
+    const speed = 0.44 + c * 0.96; // 0.44 a 1.40
+    const loft = (1.0 - c) * 0.13; // 0.13 no lob rápido; 0.0 na carga máxima (totalmente reto!)
+    const gravity = 0.011 - c * 0.0082; // 0.011 (cai no lob) a 0.0028 (quase laser)
+
     const vx = -sinYaw * cosPitch * speed;
-    const vy = Math.max(0.04, -sinPitch * speed + (0.08 + c * 0.14));
+    const vy = -sinPitch * speed + loft;
     const vz = -cosYaw * cosPitch * speed;
 
-    const snowballGeo = new THREE.SphereGeometry(0.22, 10, 10);
-    const snowballMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 });
+    const snowballGeo = new THREE.SphereGeometry(0.20 + c * 0.04, 10, 10);
+    const snowballMat = new THREE.MeshStandardMaterial({
+      color: c > 0.8 ? 0xffffff : 0xf8fafc,
+      roughness: 0.82
+    });
     const mesh = new THREE.Mesh(snowballGeo, snowballMat);
-    mesh.position.set(this.playerPosX, this.playerPosY + 1.15, this.playerPosZ);
+
+    // Posição de origem no ombro / mão direita
+    const shoulderOffset = 0.42;
+    const spawnX = this.playerPosX + Math.cos(this.cameraAngleY) * shoulderOffset;
+    const spawnZ = this.playerPosZ - Math.sin(this.cameraAngleY) * shoulderOffset;
+    mesh.position.set(spawnX, this.playerPosY + 1.25, spawnZ);
     mesh.castShadow = true;
     this.scene.add(mesh);
 
-    this.snowballs.push({ mesh, vx, vy, vz, life: 0, isEnemy: false });
+    this.snowballs.push({ mesh, vx, vy, vz, life: 0, isEnemy: false, gravity });
     this.playSnowThrowSound(c);
   }
 
@@ -2080,9 +2483,9 @@ class SnowSlideTPSMasterEngine {
       sb.mesh.position.x += sb.vx;
       sb.mesh.position.y += sb.vy;
       sb.mesh.position.z += sb.vz;
-      sb.vy -= 0.009; // Gravidade balística mais suave e realista
-      sb.vx *= 0.994; // Arrasto aerodinâmico
-      sb.vz *= 0.994;
+      sb.vy -= sb.gravity; // Gravidade balística proporcional à carga!
+      sb.vx *= 0.996; // Arrasto aerodinâmico suave
+      sb.vz *= 0.996;
       sb.life++;
 
       sb.mesh.rotation.x += 0.15;
@@ -2142,6 +2545,7 @@ class SnowSlideTPSMasterEngine {
               if (distBot < 1.25) {
                 splat = true;
                 bot.health--;
+                bot.hitTimer = 18;
                 this.warHits++;
                 this.warScore += 50;
                 bot.stateTimer = 20;
@@ -4520,6 +4924,8 @@ class SnowSlideTPSMasterEngine {
       else if (cfg.type === 'dog') model = this.createDetailedDog();
       else model = this.createDetailedPenguin();
 
+      const botRig = model.userData.rig as CharacterRig;
+
       model.position.set(cfg.start.x, 0, cfg.start.z);
       this.scene.add(model);
 
@@ -4528,24 +4934,34 @@ class SnowSlideTPSMasterEngine {
         name: cfg.name,
         type: cfg.type,
         group: model,
-        torso: model.children[0] as THREE.Group,
-        head: (model.children[0] as THREE.Group).children[2] as THREE.Group,
-        armL: (model.children[0] as THREE.Group).children[3] as THREE.Mesh,
-        armR: (model.children[0] as THREE.Group).children[4] as THREE.Mesh,
-        footL: model.children[1] as THREE.Mesh,
-        footR: model.children[2] as THREE.Mesh,
-        tail: null,
+        rig: botRig,
         pos: new THREE.Vector3(cfg.start.x, 0, cfg.start.z),
         rotY: 0,
         health: 3,
         maxHealth: 3,
         state: 'patrol',
-        stateTimer: Math.floor(Math.random() * 60),
-        targetPos: new THREE.Vector3(0, 0, 0),
+        stateTimer: 60 + Math.floor(Math.random() * 60),
+        targetPos: new THREE.Vector3(cfg.start.x, 0, cfg.start.z),
         invulnTimer: 0,
         iceCube: null,
-        walkTime: Math.random() * 10
+        walkTime: Math.random() * 10,
+        strafeDir: Math.random() < 0.5 ? -1 : 1,
+        throwCooldown: 60 + Math.floor(Math.random() * 60),
+        hitTimer: 0,
+        isMoving: false
       });
+    }
+
+    // Crucial: Restaura o playerRig do jogador para que nunca seja sobrescrito pelos bots!
+    if (this.playerRig) {
+      this.charTorso = this.playerRig.torso;
+      this.charHead = this.playerRig.head;
+      this.charArmL = this.playerRig.armL as THREE.Mesh;
+      this.charArmR = this.playerRig.armR as THREE.Mesh;
+      this.charFootL = this.playerRig.footL as THREE.Mesh;
+      this.charFootR = this.playerRig.footR as THREE.Mesh;
+      this.charTail = this.playerRig.tail;
+      this.charScarfTail = this.playerRig.scarfTail;
     }
   }
 
@@ -4564,10 +4980,13 @@ class SnowSlideTPSMasterEngine {
       }
     }
 
-    // Atualiza IA de combate dos bots
+    // Atualiza IA de combate e animação esquelética dos bots
     for (const bot of this.warBots) {
+      if (bot.hitTimer > 0) bot.hitTimer--;
+
       if (bot.state === 'frozen') {
         bot.stateTimer--;
+        this.animateBot(bot);
         if (bot.stateTimer <= 0) {
           // Descongela e renasce
           if (bot.iceCube) {
@@ -4587,27 +5006,77 @@ class SnowSlideTPSMasterEngine {
       const toPlayerZ = this.playerPosZ - bot.pos.z;
       const distToPlayer = Math.sqrt(toPlayerX * toPlayerX + toPlayerZ * toPlayerZ);
 
-      bot.stateTimer--;
-
-      // Comportamento: mirar e jogar bola de neve se estiver no alcance
-      if (distToPlayer < 24 && distToPlayer > 3.5) {
+      // Comportamentos e Estados de Combate dos Bots:
+      if (bot.state === 'windup') {
+        bot.isMoving = false;
+        bot.rotY = Math.atan2(toPlayerX, toPlayerZ);
+        bot.group.rotation.y = bot.rotY;
+        bot.stateTimer--;
+        if (bot.stateTimer <= 0) {
+          this.throwBotSnowball(bot);
+          bot.state = 'throw';
+          bot.stateTimer = 14;
+        }
+      } else if (bot.state === 'throw') {
+        bot.isMoving = false;
+        bot.stateTimer--;
+        if (bot.stateTimer <= 0) {
+          bot.state = 'skirmish';
+          bot.throwCooldown = 70 + Math.floor(Math.random() * 60);
+          bot.strafeDir = Math.random() < 0.5 ? -1 : 1;
+        }
+      } else if (distToPlayer < 24) {
+        // Skirmish tático ativo (aproxima, recua e faz strafe lateral entre barreiras)
+        bot.state = 'skirmish';
         bot.rotY = Math.atan2(toPlayerX, toPlayerZ);
         bot.group.rotation.y = bot.rotY;
 
-        if (bot.stateTimer <= 0) {
-          this.throwBotSnowball(bot);
-          bot.stateTimer = 90 + Math.floor(Math.random() * 60); // Joga a cada 1.5s a 2.5s
+        let fwdMove = 0;
+        if (distToPlayer > 17) fwdMove = 0.08;
+        else if (distToPlayer < 5.5) fwdMove = -0.07;
+
+        const fwdX = (toPlayerX / distToPlayer);
+        const fwdZ = (toPlayerZ / distToPlayer);
+        const rightX = -fwdZ;
+        const rightZ = fwdX;
+
+        const strafeSpeed = 0.07 * bot.strafeDir;
+        const dX = (fwdX * fwdMove) + (rightX * strafeSpeed);
+        const dZ = (fwdZ * fwdMove) + (rightZ * strafeSpeed);
+
+        const newX = bot.pos.x + dX;
+        const newZ = bot.pos.z + dZ;
+        const resolved = this.resolveWarCollisions(newX, newZ, 0.65);
+
+        if (Math.abs(resolved.x - newX) > 0.01 || Math.abs(resolved.z - newZ) > 0.01) {
+          bot.strafeDir = -bot.strafeDir;
+        }
+
+        const movedDist = Math.hypot(resolved.x - bot.pos.x, resolved.z - bot.pos.z);
+        bot.isMoving = movedDist > 0.01;
+        if (bot.isMoving) {
+          bot.walkTime += 0.20;
+        }
+
+        bot.pos.x = resolved.x;
+        bot.pos.z = resolved.z;
+
+        bot.throwCooldown--;
+        if (bot.throwCooldown <= 0) {
+          bot.state = 'windup';
+          bot.stateTimer = 22; // ~360ms de animação de preparação
         }
       } else {
         // Patrulhar pelo labirinto
+        bot.state = 'patrol';
+        bot.stateTimer--;
         if (bot.stateTimer <= 0) {
-          // Escolhe novo destino aleatório próximo
           bot.targetPos.set(
             (Math.random() - 0.5) * 36,
             0,
             (Math.random() - 0.5) * 36
           );
-          bot.stateTimer = 120 + Math.floor(Math.random() * 80);
+          bot.stateTimer = 100 + Math.floor(Math.random() * 80);
         }
 
         const dx = bot.targetPos.x - bot.pos.x;
@@ -4616,20 +5085,21 @@ class SnowSlideTPSMasterEngine {
         if (dTarget > 0.8) {
           bot.rotY = Math.atan2(dx, dz);
           bot.group.rotation.y = bot.rotY;
-          const spd = 0.05;
-          bot.pos.x += (dx / dTarget) * spd;
-          bot.pos.z += (dz / dTarget) * spd;
-
-          // Animação de caminhada
-          bot.walkTime += 0.12;
-          if (bot.footL && bot.footR) {
-            bot.footL.position.z = Math.sin(bot.walkTime) * 0.18;
-            bot.footR.position.z = -Math.sin(bot.walkTime) * 0.18;
-          }
+          const spd = 0.07;
+          const newX = bot.pos.x + (dx / dTarget) * spd;
+          const newZ = bot.pos.z + (dz / dTarget) * spd;
+          const resolved = this.resolveWarCollisions(newX, newZ, 0.65);
+          bot.pos.x = resolved.x;
+          bot.pos.z = resolved.z;
+          bot.isMoving = true;
+          bot.walkTime += 0.16;
+        } else {
+          bot.isMoving = false;
         }
       }
 
       bot.group.position.copy(bot.pos);
+      this.animateBot(bot);
     }
   }
 
@@ -4639,19 +5109,20 @@ class SnowSlideTPSMasterEngine {
     const dist = Math.sqrt(toPlayerX * toPlayerX + toPlayerZ * toPlayerZ);
     if (dist < 0.1) return;
 
-    const speed = 0.52;
+    const speed = 0.68;
     const vx = (toPlayerX / dist) * speed;
     const vz = (toPlayerZ / dist) * speed;
-    const vy = 0.16 + (dist / 24) * 0.10;
+    const vy = 0.12 + (dist / 24) * 0.08;
+    const gravity = 0.007;
 
     const snowballGeo = new THREE.SphereGeometry(0.20, 8, 8);
     const snowballMat = new THREE.MeshStandardMaterial({ color: 0x93c5fd, roughness: 0.7 });
     const mesh = new THREE.Mesh(snowballGeo, snowballMat);
-    mesh.position.set(bot.pos.x, 1.2, bot.pos.z);
+    mesh.position.set(bot.pos.x, 1.25, bot.pos.z);
     mesh.castShadow = true;
     this.scene.add(mesh);
 
-    this.snowballs.push({ mesh, vx, vy, vz, life: 0, isEnemy: true });
+    this.snowballs.push({ mesh, vx, vy, vz, life: 0, isEnemy: true, gravity });
     this.playSnowThrowSound(0.5);
   }
 
@@ -5448,17 +5919,30 @@ class SnowSlideTPSMasterEngine {
       crosshairEl.classList.toggle('aiming', this.isAimingDownSights);
     }
 
+    if (this.throwAnimTimer > 0) {
+      this.throwAnimTimer--;
+    }
+
     // Atualiza barra de carga da força de arremesso
     if (this.isChargingSnowball) {
       const duration = performance.now() - this.snowballChargeStartTime;
       const ratio = Math.min(1.0, Math.max(0.15, duration / 850));
+      this.currentChargeRatio = ratio;
       const pct = Math.round(ratio * 100);
       const container = document.getElementById('snowball-charge-container');
       const fill = document.getElementById('snowball-charge-fill');
       const txt = document.getElementById('snowball-charge-text');
       if (container) container.style.display = 'block';
       if (fill) fill.style.width = `${pct}%`;
-      if (txt) txt.innerText = `FORÇA: ${pct}%`;
+      if (txt) {
+        if (pct >= 85) {
+          txt.innerText = `FORÇA: ${pct}% ❄️ TIRO RETO!`;
+        } else if (pct >= 50) {
+          txt.innerText = `FORÇA: ${pct}% ⚡ RÁPIDO`;
+        } else {
+          txt.innerText = `FORÇA: ${pct}% 🏹 ARCO`;
+        }
+      }
     }
 
     let inputForward = 0;
@@ -5510,11 +5994,20 @@ class SnowSlideTPSMasterEngine {
           this.playerPosX = resolved.x;
           this.playerPosZ = resolved.z;
 
-          const targetRotY = Math.atan2(moveWorldX, moveWorldZ);
-          let diffRot = targetRotY - this.playerGroup.rotation.y;
-          while (diffRot > Math.PI) diffRot -= Math.PI * 2;
-          while (diffRot < -Math.PI) diffRot += Math.PI * 2;
-          this.playerGroup.rotation.y += diffRot * 0.22;
+          // Se mirando/carregando/jogando, alinha sempre para onde a câmera está apontando
+          if (this.isAimingDownSights || this.isChargingSnowball || this.throwAnimTimer > 0) {
+            const targetRotY = this.cameraAngleY + Math.PI;
+            let diffRot = targetRotY - this.playerGroup.rotation.y;
+            while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+            while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+            this.playerGroup.rotation.y += diffRot * 0.35;
+          } else {
+            const targetRotY = Math.atan2(moveWorldX, moveWorldZ);
+            let diffRot = targetRotY - this.playerGroup.rotation.y;
+            while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+            while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+            this.playerGroup.rotation.y += diffRot * 0.22;
+          }
 
           this.walkTime += running ? 0.30 : 0.18;
           this.animateCharacterWalk(this.walkTime, running);
@@ -5523,6 +6016,13 @@ class SnowSlideTPSMasterEngine {
             this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
           }
         } else {
+          if (this.isAimingDownSights || this.isChargingSnowball || this.throwAnimTimer > 0) {
+            const targetRotY = this.cameraAngleY + Math.PI;
+            let diffRot = targetRotY - this.playerGroup.rotation.y;
+            while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+            while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+            this.playerGroup.rotation.y += diffRot * 0.35;
+          }
           this.animateCharacterIdle();
         }
 
@@ -5709,11 +6209,20 @@ class SnowSlideTPSMasterEngine {
         this.playerPosX = resolved.x;
         this.playerPosZ = resolved.z;
 
-        const targetRotY = Math.atan2(moveWorldX, moveWorldZ);
-        let diffRot = targetRotY - this.playerGroup.rotation.y;
-        while (diffRot > Math.PI) diffRot -= Math.PI * 2;
-        while (diffRot < -Math.PI) diffRot += Math.PI * 2;
-        this.playerGroup.rotation.y += diffRot * 0.22;
+        // Na arena de guerra, mira tática: alinha sempre com a mira da câmera ao mirar/carregar/jogar
+        if (this.isAimingDownSights || this.isChargingSnowball || this.throwAnimTimer > 0) {
+          const targetRotY = this.cameraAngleY + Math.PI;
+          let diffRot = targetRotY - this.playerGroup.rotation.y;
+          while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+          while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+          this.playerGroup.rotation.y += diffRot * 0.35;
+        } else {
+          const targetRotY = Math.atan2(moveWorldX, moveWorldZ);
+          let diffRot = targetRotY - this.playerGroup.rotation.y;
+          while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+          while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+          this.playerGroup.rotation.y += diffRot * 0.25;
+        }
 
         this.walkTime += running ? 0.30 : 0.18;
         this.animateCharacterWalk(this.walkTime, running);
@@ -5722,6 +6231,13 @@ class SnowSlideTPSMasterEngine {
           this.addContinuousSnowTrail(this.playerPosX, this.playerPosY, this.playerPosZ, this.playerGroup.rotation.y);
         }
       } else {
+        if (this.isAimingDownSights || this.isChargingSnowball || this.throwAnimTimer > 0) {
+          const targetRotY = this.cameraAngleY + Math.PI;
+          let diffRot = targetRotY - this.playerGroup.rotation.y;
+          while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+          while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+          this.playerGroup.rotation.y += diffRot * 0.35;
+        }
         this.animateCharacterIdle();
       }
 
