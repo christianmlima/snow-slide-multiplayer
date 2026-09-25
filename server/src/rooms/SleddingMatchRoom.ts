@@ -1,5 +1,6 @@
 import { Room, Client } from 'colyseus';
 import { GameState, PlayerState } from '@snow-slide/shared';
+import { LeaderboardService } from '../services/LeaderboardService';
 
 export class SleddingMatchRoom extends Room<GameState> {
   maxClients = 8;
@@ -199,7 +200,20 @@ export class SleddingMatchRoom extends Room<GameState> {
 
     leaderboard.sort((a, b) => a.rank - b.rank || a.finishTime - b.finishTime);
 
-    console.log('[SleddingMatchRoom] 🏆 Corrida finalizada! Resultados gerados.');
+    // Salva automaticamente pilotos com tempos válidos no Hall da Fama Global
+    leaderboard.forEach((entry) => {
+      if (entry.finishTime && entry.finishTime > 10 && entry.finishTime < 9999) {
+        LeaderboardService.addRaceRecord({
+          playerName: entry.name,
+          character: entry.character,
+          trackName: 'Pico da Nevasca',
+          finishTime: entry.finishTime,
+          score: entry.score,
+        });
+      }
+    });
+
+    console.log('[SleddingMatchRoom] 🏆 Corrida finalizada! Resultados gerados e salvos no Leaderboard.');
     this.broadcast('raceFinished', { leaderboard });
   }
 

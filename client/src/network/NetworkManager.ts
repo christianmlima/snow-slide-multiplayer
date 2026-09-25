@@ -16,6 +16,8 @@ export interface PlayerProfile {
 
 export class NetworkManager {
   private client: Client;
+  private serverUrl: string;
+  public currentRoomCode: string = '';
   public hubRoom: Room<GameState> | null = null;
   public raceRoom: Room<GameState> | null = null;
   public arenaRoom: Room<GameState> | null = null;
@@ -77,30 +79,104 @@ export class NetworkManager {
       }
     }
 
+    this.serverUrl = serverUrl;
     console.log(`[NetworkManager] Conectando ao servidor Colyseus: ${serverUrl}`);
     this.client = new Client(serverUrl);
+  }
+
+  public getHttpUrl(): string {
+    let url = this.serverUrl;
+    if (url.startsWith('wss://')) url = url.replace('wss://', 'https://');
+    else if (url.startsWith('ws://')) url = url.replace('ws://', 'http://');
+    return url.replace(/\/+$/, '');
+  }
+
+  // =========================================================================
+  // SALÃO DE RECORDES (LEADERBOARD REST API)
+  // =========================================================================
+  public async fetchLeaderboard(): Promise<{ race: any[]; arena: any[] } | null> {
+    try {
+      const res = await fetch(`${this.getHttpUrl()}/api/leaderboard`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      return json.data;
+    } catch (err) {
+      console.warn('[NetworkManager] Erro ao buscar leaderboard do servidor:', err);
+      return null;
+    }
+  }
+
+  public async submitRaceRecord(record: {
+    playerName: string;
+    character: string;
+    trackName: string;
+    finishTime: number;
+    score: number;
+  }) {
+    try {
+      const res = await fetch(`${this.getHttpUrl()}/api/leaderboard/race`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json.record;
+      }
+    } catch (err) {
+      console.warn('[NetworkManager] Não foi possível enviar recorde ao servidor:', err);
+    }
+    return null;
+  }
+
+  public async submitArenaRecord(record: {
+    playerName: string;
+    character: string;
+    kos: number;
+    score: number;
+  }) {
+    try {
+      const res = await fetch(`${this.getHttpUrl()}/api/leaderboard/arena`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json.record;
+      }
+    } catch (err) {
+      console.warn('[NetworkManager] Não foi possível enviar recorde de arena ao servidor:', err);
+    }
+    return null;
   }
 
   // =========================================================================
   // HUB DA VILA ALPINA
   // =========================================================================
-  public async connectToHub(profile: PlayerProfile, scene: THREE.Scene): Promise<boolean> {
+  public async connectToHub(profile: PlayerProfile, scene: THREE.Scene, roomCode?: string): Promise<boolean> {
     this.status = 'connecting';
+    this.currentRoomCode = roomCode || '';
     this.onStatusChange?.('connecting', 1);
 
     try {
-      this.hubRoom = await this.client.joinOrCreate<GameState>('alpine_hub', {
+      const options: any = {
         name: profile.name,
         character: profile.character,
         vehicle: profile.vehicle,
         hat: profile.hat,
         scarf: profile.scarf,
         goggles: profile.goggles,
-      });
+      };
+      if (roomCode) {
+        options.roomCode = roomCode;
+      }
+
+      this.hubRoom = await this.client.joinOrCreate<GameState>('alpine_hub', options);
 
       this.sessionId = this.hubRoom.sessionId;
       this.status = 'connected';
-      console.log(`[NetworkManager] Conectado à Vila Alpina! SessionId: ${this.sessionId}`);
+      console.log(`[NetworkManager] Conectado à Vila Alpina! (Sala: ${roomCode || 'Pública'}) SessionId: ${this.sessionId}`);
 
       this.setupHubRoomListeners(this.hubRoom, scene);
       this.updateOnlineCount();
@@ -271,23 +347,29 @@ export class NetworkManager {
   // =========================================================================
   // CORRIDA DOWNHILL MULTIPLAYER (SLEDDING MATCH)
   // =========================================================================
-  public async joinRace(profile: PlayerProfile, scene: THREE.Scene): Promise<boolean> {
+  public async joinRace(profile: PlayerProfile, scene: THREE.Scene, roomCode?: string): Promise<boolean> {
     this.leaveHub();
     this.clearRemotePlayers();
+    this.currentRoomCode = roomCode || '';
 
     try {
-      this.raceRoom = await this.client.joinOrCreate<GameState>('sledding_match', {
+      const options: any = {
         name: profile.name,
         character: profile.character,
         vehicle: profile.vehicle,
         hat: profile.hat,
         scarf: profile.scarf,
         goggles: profile.goggles,
-      });
+      };
+      if (roomCode) {
+        options.roomCode = roomCode;
+      }
+
+      this.raceRoom = await this.client.joinOrCreate<GameState>('sledding_match', options);
 
       this.sessionId = this.raceRoom.sessionId;
       this.status = 'connected';
-      console.log(`[NetworkManager] Entrou na sala de corrida! SessionId: ${this.sessionId}`);
+      console.log(`[NetworkManager] Entrou na sala de corrida! (Sala: ${roomCode || 'Pública'}) SessionId: ${this.sessionId}`);
 
       this.setupRaceRoomListeners(this.raceRoom, scene);
       return true;
@@ -415,23 +497,29 @@ export class NetworkManager {
   // =========================================================================
   // ARENA DE GUERRA DE NEVE PVP
   // =========================================================================
-  public async connectToArena(profile: PlayerProfile, scene: THREE.Scene): Promise<boolean> {
+  public async connectToArena(profile: PlayerProfile, scene: THREE.Scene, roomCode?: string): Promise<boolean> {
     this.status = 'connecting';
+    this.currentRoomCode = roomCode || '';
     this.onStatusChange?.('connecting', 1);
 
     try {
-      this.arenaRoom = await this.client.joinOrCreate<GameState>('snowball_arena', {
+      const options: any = {
         name: profile.name,
         character: profile.character,
         vehicle: profile.vehicle,
         hat: profile.hat,
         scarf: profile.scarf,
         goggles: profile.goggles,
-      });
+      };
+      if (roomCode) {
+        options.roomCode = roomCode;
+      }
+
+      this.arenaRoom = await this.client.joinOrCreate<GameState>('snowball_arena', options);
 
       this.sessionId = this.arenaRoom.sessionId;
       this.status = 'connected';
-      console.log(`[NetworkManager] Conectado à Arena de Guerra de Neve! SessionId: ${this.sessionId}`);
+      console.log(`[NetworkManager] Conectado à Arena de Guerra de Neve! (Sala: ${roomCode || 'Pública'}) SessionId: ${this.sessionId}`);
 
       this.setupArenaRoomListeners(this.arenaRoom, scene);
       this.updateOnlineCount();

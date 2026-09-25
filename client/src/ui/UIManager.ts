@@ -493,4 +493,79 @@ export class UIManager {
       });
     });
   }
+
+  public static renderLeaderboardTable(
+    data: { race: any[]; arena: any[] },
+    tab: 'race' | 'arena'
+  ) {
+    const head = document.getElementById('leaderboard-table-head');
+    const body = document.getElementById('leaderboard-table-body');
+    const title = document.getElementById('leaderboard-title');
+    const tip = document.getElementById('leaderboard-tip');
+
+    if (!head || !body) return;
+
+    if (tab === 'race') {
+      if (title) title.innerText = '🎖️ Top 20 Melhores Tempos Globais';
+      if (tip) tip.innerHTML = '💡 <em>Dica: Passe no centro dos portais de Slalom para garantir bônus multiplicador!</em>';
+      head.innerHTML = `
+        <tr>
+          <th>Posição</th>
+          <th>Piloto</th>
+          <th>Tempo</th>
+          <th>Pontos</th>
+        </tr>
+      `;
+
+      if (!data.race || data.race.length === 0) {
+        body.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:12px; color:#94a3b8;">Nenhum recorde registrado ainda. Seja o primeiro a descer!</td></tr>`;
+        return;
+      }
+
+      body.innerHTML = data.race.map((r, i) => {
+        const medal = i === 0 ? '🥇 1º' : (i === 1 ? '🥈 2º' : (i === 2 ? '🥉 3º' : `${i + 1}º`));
+        const color = i === 0 ? '#facc15' : (i === 1 ? '#e2e8f0' : (i === 2 ? '#f97316' : '#cbd5e1'));
+        const timeStr = r.formattedTime || `${r.finishTime.toFixed(1)}s`;
+        const scoreStr = (r.score || 0).toLocaleString('pt-BR');
+        return `
+          <tr>
+            <td style="font-weight:bold; color:${color};">${medal}</td>
+            <td style="color:#f8fafc; font-weight:500;">${r.playerName}</td>
+            <td style="color:#22c55e; font-weight:bold;">${timeStr}</td>
+            <td style="color:#38bdf8;">${scoreStr}</td>
+          </tr>
+        `;
+      }).join('');
+    } else {
+      if (title) title.innerText = '⚔️ Top Guerreiros da Batalha de Neve';
+      if (tip) tip.innerHTML = '💡 <em>Dica: Segure o arremesso para carregar a bola com mais força e alcance!</em>';
+      head.innerHTML = `
+        <tr>
+          <th>Posição</th>
+          <th>Guerreiro</th>
+          <th>K.O.s</th>
+          <th>Pontos</th>
+        </tr>
+      `;
+
+      if (!data.arena || data.arena.length === 0) {
+        body.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:12px; color:#94a3b8;">Nenhum combatente registrado ainda. Entre na arena e pontue!</td></tr>`;
+        return;
+      }
+
+      body.innerHTML = data.arena.map((a, i) => {
+        const medal = i === 0 ? '🥇 1º' : (i === 1 ? '🥈 2º' : (i === 2 ? '🥉 3º' : `${i + 1}º`));
+        const color = i === 0 ? '#facc15' : (i === 1 ? '#e2e8f0' : (i === 2 ? '#f97316' : '#cbd5e1'));
+        const scoreStr = (a.score || 0).toLocaleString('pt-BR');
+        return `
+          <tr>
+            <td style="font-weight:bold; color:${color};">${medal}</td>
+            <td style="color:#f8fafc; font-weight:500;">${a.playerName}</td>
+            <td style="color:#ef4444; font-weight:bold;">🎯 ${a.kos} KOs</td>
+            <td style="color:#38bdf8;">${scoreStr}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
 }

@@ -1,0 +1,88 @@
+{
+  "race": [
+    {
+      "id": "seed-1",
+      "playerName": "Pinguim Supers\u00f4nico",
+      "character": "penguin",
+      "trackName": "Pico da Nevasca",
+      "finishTime": 68.4,
+      "formattedTime": "01:08.4",
+      "score": 18450,
+      "date": "2026-09-24"
+    },
+    {
+      "id": "seed-2",
+      "playerName": "Felino da Geada",
+      "character": "cat",
+      "trackName": "Pico da Nevasca",
+      "finishTime": 74.2,
+      "formattedTime": "01:14.2",
+      "score": 15200,
+      "date": "2026-09-24"
+    },
+    {
+      "id": "seed-3",
+      "playerName": "Sapo Glacial",
+      "character": "frog",
+      "trackName": "Pico da Nevasca",
+      "finishTime": 79.8,
+      "formattedTime": "01:19.8",
+      "score": 13550,
+      "date": "2026-09-24"
+    },
+    {
+      "id": "seed-4",
+      "playerName": "Shih Tzu Valente",
+      "character": "dog",
+      "trackName": "Pico da Nevasca",
+      "finishTime": 85.1,
+      "formattedTime": "01:25.1",
+      "score": 11900,
+      "date": "2026-09-25"
+    },
+    {
+      "id": "seed-5",
+      "playerName": "Urso Polar Veloz",
+      "character": "polar_bear",
+      "trackName": "Pico da Nevasca",
+      "finishTime": 91.5,
+      "formattedTime": "01:31.5",
+      "score": 9800,
+      "date": "2026-09-25"
+    }
+  ],
+  "arena": [
+    {
+      "id": "arena-1",
+      "playerName": "Mestre das Neves",
+      "character": "penguin",
+      "kos": 12,
+      "score": 3600,
+      "date": "2026-09-24"
+    },
+    {
+      "id": "arena-2",
+      "playerName": "Atirador Gelado",
+      "character": "dog",
+      "kos": 9,
+      "score": 2700,
+      "date": "2026-09-24"
+    },
+    {
+      "id": "arena-3",
+      "playerName": "Pinguim Sniper",
+      "character": "cat",
+      "kos": 7,
+      "score": 2100,
+      "date": "2026-09-25"
+    },
+    {
+      "id": "arena-4",
+      "playerName": "Defensor da Fortaleza",
+      "character": "polar_bear",
+      "kos": 5,
+      "score": 1500,
+      "date": "2026-09-25"
+    }
+  ]
+}

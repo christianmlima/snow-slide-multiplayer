@@ -1,5 +1,6 @@
 import { Room, Client } from 'colyseus';
 import { GameState, PlayerState } from '@snow-slide/shared';
+import { LeaderboardService } from '../services/LeaderboardService';
 
 export class SnowballArenaRoom extends Room<GameState> {
   maxClients = 8;
@@ -174,8 +175,20 @@ export class SnowballArenaRoom extends Room<GameState> {
     });
     leaderboard.sort((a, b) => b.kos - a.kos || b.score - a.score);
 
+    // Salva automaticamente jogadores com K.O.s no Leaderboard
+    leaderboard.forEach((p) => {
+      if (p.kos > 0) {
+        LeaderboardService.addArenaRecord({
+          playerName: p.name,
+          character: p.character || 'penguin',
+          kos: p.kos,
+          score: p.score
+        });
+      }
+    });
+
     this.broadcast('arenaFinished', { leaderboard });
-    console.log('[SnowballArena] Partida finalizada! Placar:', leaderboard);
+    console.log('[SnowballArena] Partida finalizada! Placar salvo no Leaderboard:', leaderboard);
   }
 
   onDispose() {

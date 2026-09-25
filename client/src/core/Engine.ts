@@ -239,6 +239,20 @@ export class SnowSlideTPSMasterEngine {
   private pvpKOs: number = 0;
   private pvpRespawnTimer: number = 0;
 
+  // Salas Privadas e Matchmaking
+  private isPrivateRoom: boolean = false;
+  private customRoomCode: string = '';
+
+  // Salão de Recordes & Leaderboard Global
+  private cachedLeaderboard: { race: any[]; arena: any[] } = { race: [], arena: [] };
+  private currentLeaderboardTab: 'race' | 'arena' = 'race';
+
+  // Ciclo Dia/Noite e Iluminação Dinâmica da Vila Alpina
+  private weatherMode: 'dynamic' | 'day' | 'sunset' | 'night' = 'dynamic';
+  private dayTimeCycle: number = 0.25; // 0.25 = dia, 0.5 = entardecer, 0.75 = noite polar
+  private hubSunLight: THREE.DirectionalLight | null = null;
+  private hubAmbientLight: THREE.AmbientLight | null = null;
+
   constructor() {
     this.soundManager = new SoundManager(true);
     this.musicManager = new MusicManager(this.soundManager);
@@ -295,6 +309,24 @@ export class SnowSlideTPSMasterEngine {
           this.unlockedAchievements = new Set(arr);
         }
       }
+
+      const savedWeather = localStorage.getItem('snow_slide_weather');
+      if (savedWeather && ['dynamic', 'day', 'sunset', 'night'].includes(savedWeather)) {
+        this.weatherMode = savedWeather as any;
+      }
+
+      // Detecta convite via URL param (?room=NEVE-42)
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const queryRoom = params.get('room');
+        if (queryRoom && queryRoom.trim().length > 0) {
+          this.customRoomCode = queryRoom.trim().toUpperCase();
+          this.isPrivateRoom = true;
+          setTimeout(() => {
+            UIManager.showToast(`❄️ Convite detectado! Sala: ${this.customRoomCode}`, 'success', this.soundManager);
+          }, 800);
+        }
+      }
     } catch (e) {
       console.warn('Erro ao carregar configurações salvas:', e);
     }
@@ -323,6 +355,7 @@ export class SnowSlideTPSMasterEngine {
       localStorage.setItem('snow_slide_coins', this.currency.toString());
       localStorage.setItem('snow_slide_inventory', JSON.stringify(Array.from(this.inventory)));
       localStorage.setItem('snow_slide_equipped', JSON.stringify(this.equipped));
+      localStorage.setItem('snow_slide_weather', this.weatherMode);
     } catch (e) {}
   }
 
@@ -495,11 +528,12 @@ export class SnowSlideTPSMasterEngine {
     this.scene.background = new THREE.Color(0xcbe4f9);
     this.scene.fog = new THREE.FogExp2(0xcbe4f9, 0.004);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.9);
-    this.scene.add(ambient);
-    const sun = new THREE.DirectionalLight(0xffffff, 1.3);
-    sun.position.set(40, 70, -40);
-    this.scene.add(sun);
+    this.hubAmbientLight = new THREE.AmbientLight(0xffffff, 0.9);
+    this.scene.add(this.hubAmbientLight);
+    this.hubSunLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    this.hubSunLight.position.set(40, 70, -40);
+    this.scene.add(this.hubSunLight);
+    this.updateWeatherAndDayCycle(0);
 
     this.particleManager.createSnowParticles();
     this.particleManager.createSnowSpraySystem();
@@ -1100,6 +1134,12 @@ export class SnowSlideTPSMasterEngine {
         this.handleMultiplayerRaceFinished(data);
       };
 
+      const roomCodeToUse = this.isPrivateRoom && this.customRoomCode ? this.customRoomCode : undefined;
+      const statusBadge = document.getElementById('room-code-status-badge');
+      if (statusBadge) {
+        statusBadge.innerText = roomCodeToUse ? `Sala: ${roomCodeToUse}` : 'Sala Pública';
+      }
+
       const joined = await this.networkManager.joinRace(
         {
           name: this.playerName,
@@ -1109,7 +1149,8 @@ export class SnowSlideTPSMasterEngine {
           scarf: this.equipped.scarf,
           goggles: this.equipped.goggles,
         },
-        this.scene
+        this.scene,
+        roomCodeToUse
       );
 
       if (!joined) {
@@ -1173,6 +1214,80 @@ export class SnowSlideTPSMasterEngine {
 
   private handleMultiplayerRaceFinished(data: { leaderboard: any[] }) {
     UIManager.renderRaceFinishPodium(data.leaderboard);
+
+    // Salva automaticamente o recorde no Hall da Fama Global
+    const myResult = data.leaderboard.find((p: any) => p.name === this.playerName || p.id === this.networkManager.sessionId);
+    if (myResult && myResult.finishTime && myResult.finishTime < 9999) {
+      this.networkManager.submitRaceRecord({
+        playerName: this.playerName,
+        character: this.selectedCharacter,
+        trackName: TRACK_CATALOG[this.selectedTrack]?.name || 'Pico da Nevasca',
+        finishTime: myResult.finishTime,
+        score: myResult.score || this.score
+      });
+    }
+  }
+
+  public async openLeaderboardModal() {
+    UIManager.openRecordsModal();
+    const data = await this.networkManager.fetchLeaderboard();
+    if (data) {
+      this.cachedLeaderboard = data;
+    }
+    UIManager.renderLeaderboardTable(this.cachedLeaderboard, this.currentLeaderboardTab);
+  }
+
+  public updateWeatherAndDayCycle(delta: number) {
+    if (this.currentScene !== 'HUB' || !this.hubSunLight || !this.hubAmbientLight) return;
+
+    if (this.weatherMode === 'dynamic') {
+      // 1 ciclo completo dura ~3.5 minutos (210 segundos)
+      this.dayTimeCycle = (this.dayTimeCycle + (delta / 210)) % 1.0;
+    } else if (this.weatherMode === 'day') {
+      this.dayTimeCycle = 0.25;
+    } else if (this.weatherMode === 'sunset') {
+      this.dayTimeCycle = 0.50;
+    } else if (this.weatherMode === 'night') {
+      this.dayTimeCycle = 0.75;
+    }
+
+    const angle = this.dayTimeCycle * Math.PI * 2;
+    this.hubSunLight.position.set(
+      Math.cos(angle) * 70,
+      Math.sin(angle) * 70,
+      -35
+    );
+
+    const sunHeight = Math.sin(angle);
+    if (sunHeight > 0.3) {
+      // Dia claro ensolarado
+      const sky = new THREE.Color(0xcbe4f9);
+      this.scene.background = sky;
+      if (this.scene.fog) (this.scene.fog as THREE.FogExp2).color = sky;
+      this.hubSunLight.color.setHex(0xffffff);
+      this.hubSunLight.intensity = 1.3;
+      this.hubAmbientLight.color.setHex(0xffffff);
+      this.hubAmbientLight.intensity = 0.9;
+    } else if (sunHeight > -0.1) {
+      // Entardecer / Pôr do Sol Dourado
+      const t = (sunHeight + 0.1) / 0.4;
+      const sunsetSky = new THREE.Color(0xfdba74).lerp(new THREE.Color(0xcbe4f9), t);
+      this.scene.background = sunsetSky;
+      if (this.scene.fog) (this.scene.fog as THREE.FogExp2).color = sunsetSky;
+      this.hubSunLight.color.setHex(0xf97316);
+      this.hubSunLight.intensity = 1.6;
+      this.hubAmbientLight.color.setHex(0xfef08a);
+      this.hubAmbientLight.intensity = 0.7;
+    } else {
+      // Noite Polar Estrelada & Aurora
+      const nightSky = new THREE.Color(0x0a1128);
+      this.scene.background = nightSky;
+      if (this.scene.fog) (this.scene.fog as THREE.FogExp2).color = nightSky;
+      this.hubSunLight.color.setHex(0x38bdf8);
+      this.hubSunLight.intensity = 0.4;
+      this.hubAmbientLight.color.setHex(0x1e293b);
+      this.hubAmbientLight.intensity = 0.45;
+    }
   }
 
   private createItemBoxMesh(): THREE.Group {
@@ -1461,6 +1576,15 @@ export class SnowSlideTPSMasterEngine {
     if (!prevBestTime || prevBestTime === '--:--' || elapsedNum < parseFloat(prevBestTime)) {
       localStorage.setItem('snow_slide_best_time', `${elapsedSeconds}s`);
     }
+
+    // Submete recorde ao Hall da Fama Global
+    this.networkManager.submitRaceRecord({
+      playerName: this.playerName,
+      character: this.selectedCharacter,
+      trackName: TRACK_CATALOG[this.selectedTrack]?.name || 'Pico da Nevasca',
+      finishTime: elapsedNum,
+      score: this.score
+    });
 
     const finishModal = document.getElementById('race-finish-modal')!;
     const timeEl = document.getElementById('finish-time-val');
@@ -2583,6 +2707,16 @@ export class SnowSlideTPSMasterEngine {
     const fCoins = document.getElementById('war-final-coins');
     if (fCoins) fCoins.textContent = `+${earnedCoins} pts`;
 
+    // Submete pontuação da Guerra de Neve ao Leaderboard Global
+    if (this.warKOs > 0) {
+      this.networkManager.submitArenaRecord({
+        playerName: this.playerName,
+        character: this.selectedCharacter,
+        kos: this.warKOs,
+        score: earnedCoins
+      });
+    }
+
     resModal.style.display = 'flex';
   }
 
@@ -3144,7 +3278,7 @@ export class SnowSlideTPSMasterEngine {
     } else if (this.nearSnowballWarPortal) {
       this.openSnowballWarChoiceModal();
     } else if (this.nearRecords) {
-      UIManager.openRecordsModal();
+      this.openLeaderboardModal();
     }
   }
 
@@ -3279,6 +3413,17 @@ export class SnowSlideTPSMasterEngine {
           else {
             UIManager.closeAllModals();
             modal.style.display = 'flex';
+          }
+        }
+      }
+
+      if (e.code === 'KeyL') {
+        const modal = document.getElementById('records-modal');
+        if (modal) {
+          if (modal.style.display === 'flex') modal.style.display = 'none';
+          else {
+            UIManager.closeAllModals();
+            this.openLeaderboardModal();
           }
         }
       }
@@ -3811,6 +3956,131 @@ export class SnowSlideTPSMasterEngine {
       document.getElementById('cable-car-lobby-modal')!.style.display = 'none';
       this.connectMultiplayerHub();
     });
+
+    // ==========================================
+    // SELETOR DE MODO DO LOBBY: PÚBLICA VS PRIVADA
+    // ==========================================
+    const modePubBtn = document.getElementById('lobby-mode-public-btn');
+    const modePrivBtn = document.getElementById('lobby-mode-private-btn');
+    const privPanel = document.getElementById('private-room-panel');
+    const roomInput = document.getElementById('private-room-code-input') as HTMLInputElement | null;
+    const btnGenCode = document.getElementById('btn-generate-room-code');
+    const btnCopyLink = document.getElementById('btn-copy-invite-link');
+
+    const generateFunRoomCode = () => {
+      const prefixes = ['NEVE', 'GELADO', 'PINGUIM', 'ALPINO', 'POLAR', 'ESQUI'];
+      const num = Math.floor(10 + Math.random() * 90);
+      return `${prefixes[Math.floor(Math.random() * prefixes.length)]}-${num}`;
+    };
+
+    modePubBtn?.addEventListener('click', () => {
+      this.isPrivateRoom = false;
+      this.customRoomCode = '';
+      if (modePubBtn) { modePubBtn.style.background = '#0ea5e9'; modePubBtn.style.color = '#fff'; }
+      if (modePrivBtn) { modePrivBtn.style.background = 'transparent'; modePrivBtn.style.color = '#94a3b8'; }
+      if (privPanel) privPanel.style.display = 'none';
+      const badge = document.getElementById('room-code-status-badge');
+      if (badge) badge.innerText = '';
+    });
+
+    modePrivBtn?.addEventListener('click', () => {
+      this.isPrivateRoom = true;
+      if (modePrivBtn) { modePrivBtn.style.background = '#0ea5e9'; modePrivBtn.style.color = '#fff'; }
+      if (modePubBtn) { modePubBtn.style.background = 'transparent'; modePubBtn.style.color = '#94a3b8'; }
+      if (privPanel) privPanel.style.display = 'block';
+      if (roomInput && (!roomInput.value || roomInput.value.trim().length === 0)) {
+        roomInput.value = this.customRoomCode || generateFunRoomCode();
+        this.customRoomCode = roomInput.value;
+      }
+      const badge = document.getElementById('room-code-status-badge');
+      if (badge) badge.innerText = `Sala: ${this.customRoomCode}`;
+    });
+
+    btnGenCode?.addEventListener('click', () => {
+      if (roomInput) {
+        roomInput.value = generateFunRoomCode();
+        this.customRoomCode = roomInput.value;
+        const badge = document.getElementById('room-code-status-badge');
+        if (badge) badge.innerText = `Sala: ${this.customRoomCode}`;
+        this.soundManager.playTone(600, 'sine', 0.1, 0.1);
+      }
+    });
+
+    roomInput?.addEventListener('input', () => {
+      if (roomInput) {
+        this.customRoomCode = roomInput.value.trim().toUpperCase();
+        const badge = document.getElementById('room-code-status-badge');
+        if (badge) badge.innerText = this.customRoomCode ? `Sala: ${this.customRoomCode}` : '';
+      }
+    });
+
+    btnCopyLink?.addEventListener('click', () => {
+      const code = this.customRoomCode || (roomInput ? roomInput.value.trim().toUpperCase() : '');
+      if (!code) {
+        UIManager.showToast('Gere ou digite um código de sala primeiro!', 'warning', this.soundManager);
+        return;
+      }
+      const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          UIManager.showToast('📋 Link de convite copiado para a área de transferência!', 'success', this.soundManager);
+        }).catch(() => {
+          prompt('Copie o link abaixo para enviar aos seus amigos:', url);
+        });
+      } else {
+        prompt('Copie o link abaixo para enviar aos seus amigos:', url);
+      }
+    });
+
+    // Se já veio com código de sala na URL, ativa aba de sala privada
+    if (this.customRoomCode) {
+      if (modePrivBtn) modePrivBtn.click();
+      if (roomInput) roomInput.value = this.customRoomCode;
+    }
+
+    // ==========================================
+    // ABAS DO SALÃO DE RECORDES (LEADERBOARDS)
+    // ==========================================
+    const tabRaceBtn = document.getElementById('leaderboard-tab-race-btn');
+    const tabArenaBtn = document.getElementById('leaderboard-tab-arena-btn');
+    const refreshLeadBtn = document.getElementById('btn-refresh-leaderboard');
+
+    tabRaceBtn?.addEventListener('click', () => {
+      this.currentLeaderboardTab = 'race';
+      if (tabRaceBtn) { tabRaceBtn.style.background = '#0ea5e9'; tabRaceBtn.style.color = '#fff'; }
+      if (tabArenaBtn) { tabArenaBtn.style.background = 'transparent'; tabArenaBtn.style.color = '#94a3b8'; }
+      UIManager.renderLeaderboardTable(this.cachedLeaderboard, 'race');
+    });
+
+    tabArenaBtn?.addEventListener('click', () => {
+      this.currentLeaderboardTab = 'arena';
+      if (tabArenaBtn) { tabArenaBtn.style.background = '#0ea5e9'; tabArenaBtn.style.color = '#fff'; }
+      if (tabRaceBtn) { tabRaceBtn.style.background = 'transparent'; tabRaceBtn.style.color = '#94a3b8'; }
+      UIManager.renderLeaderboardTable(this.cachedLeaderboard, 'arena');
+    });
+
+    refreshLeadBtn?.addEventListener('click', async () => {
+      const data = await this.networkManager.fetchLeaderboard();
+      if (data) {
+        this.cachedLeaderboard = data;
+        UIManager.renderLeaderboardTable(this.cachedLeaderboard, this.currentLeaderboardTab);
+        UIManager.showToast('Recordes atualizados com sucesso!', 'success', this.soundManager);
+      }
+    });
+
+    // ==========================================
+    // SELETOR DE CLIMA & CICLO DIA/NOITE
+    // ==========================================
+    const weatherSelect = document.getElementById('weather-cycle-select') as HTMLSelectElement | null;
+    if (weatherSelect) {
+      weatherSelect.value = this.weatherMode;
+      weatherSelect.addEventListener('change', () => {
+        this.weatherMode = weatherSelect.value as any;
+        this.saveSettings();
+        this.updateWeatherAndDayCycle(0);
+        UIManager.showToast(`🌤️ Clima alterado para: ${weatherSelect.options[weatherSelect.selectedIndex].text}`, 'info', this.soundManager);
+      });
+    }
   }
 
   private async connectMultiplayerHub() {
@@ -3985,6 +4255,7 @@ export class SnowSlideTPSMasterEngine {
     inputLateral = Math.max(-1, Math.min(1, inputLateral));
 
     if (this.currentScene === 'HUB') {
+      this.updateWeatherAndDayCycle(1 / 60);
       this.updateWanderingNPCs();
       this.updateSnowballs();
       this.particleManager.updateSnowballBursts();
