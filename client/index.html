@@ -917,12 +917,456 @@
     }
     .finish-stat-val { font-size: 1.5rem; font-weight: 900; color: #38bdf8; }
     .finish-stat-lbl { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+
+    /* Badge de Conexão Multiplayer */
+    #network-status-badge {
+      position: absolute;
+      top: 10px;
+      right: 140px;
+      background: rgba(15, 23, 42, 0.85);
+      color: #22c55e;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: bold;
+      z-index: 25;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      display: none;
+      align-items: center;
+      gap: 6px;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    #network-status-badge.offline {
+      color: #94a3b8;
+      border-color: rgba(148, 163, 184, 0.3);
+    }
+    #network-status-badge.connecting {
+      color: #facc15;
+      border-color: rgba(250, 204, 21, 0.4);
+    }
+
+    /* Chat & Emotes do Hub */
+    #hub-chat-container {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      width: 320px;
+      max-width: 90vw;
+      z-index: 15;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: auto;
+    }
+    #hub-chat-messages {
+      max-height: 130px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.75);
+      border-radius: 10px;
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 0.82rem;
+      color: #e2e8f0;
+      scrollbar-width: thin;
+    }
+    .chat-msg { line-height: 1.35; word-break: break-word; }
+    .chat-msg-sender { color: #38bdf8; font-weight: bold; }
+    .chat-msg-system { color: #fde047; font-style: italic; }
+    #hub-chat-input-row { display: flex; gap: 6px; }
+    #hub-chat-input {
+      flex: 1;
+      padding: 8px 12px;
+      margin: 0;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: white;
+      font-size: 0.85rem;
+      outline: none;
+    }
+    #hub-chat-input:focus { border-color: #38bdf8; }
+    #hub-chat-send-btn {
+      padding: 8px 14px;
+      background: #0284c7;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.15s;
+    }
+    #hub-chat-send-btn:hover { background: #0369a1; }
+    #hub-quick-emotes { display: flex; gap: 6px; }
+    .emote-btn {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      color: white;
+      padding: 4px 8px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .emote-btn:hover { background: rgba(56, 189, 248, 0.35); transform: translateY(-1px); }
+
+    /* Placar de Posições na Corrida (Multiplayer Leaderboard) */
+    #race-multiplayer-leaderboard {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      padding: 10px 14px;
+      min-width: 180px;
+      z-index: 15;
+      display: none;
+      color: white;
+      font-size: 0.85rem;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+    .race-lead-header {
+      font-size: 0.72rem;
+      font-weight: bold;
+      color: #38bdf8;
+      margin-bottom: 6px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 4px;
+    }
+    .race-lead-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .race-lead-item.you { color: #fde047; font-weight: bold; }
+
+    /* Lobby do Teleférico */
+    #cable-car-lobby-modal {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.94);
+      z-index: 35;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      text-align: center;
+    }
+    .lobby-card {
+      background: rgba(30, 41, 59, 0.95);
+      padding: 28px;
+      border-radius: 18px;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      max-width: 440px;
+      width: 90%;
+      box-shadow: 0 20px 35px rgba(0, 0, 0, 0.75);
+    }
+    .lobby-pilots-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 16px 0;
+      max-height: 180px;
+      overflow-y: auto;
+      padding: 8px;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .lobby-pilot-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: rgba(51, 65, 85, 0.5);
+      font-size: 0.9rem;
+    }
+    .lobby-pilot-item.ready {
+      border-left: 4px solid #22c55e;
+    }
+
+    /* Contagem Regressiva Visual 3, 2, 1, VAI! */
+    #race-countdown-overlay {
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 5.5rem;
+      font-weight: 900;
+      color: #38bdf8;
+      text-shadow: 0 0 25px rgba(56, 189, 248, 0.8), 0 0 50px rgba(14, 165, 233, 0.6);
+      z-index: 25;
+      pointer-events: none;
+      display: none;
+    }
+
+    /* Caixa de Item / Power-up no HUD de Corrida */
+    #race-item-slot-container {
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      z-index: 15;
+    }
+    #race-item-slot {
+      width: 64px;
+      height: 64px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 3px solid #38bdf8;
+      border-radius: 16px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 4px 18px rgba(56, 189, 248, 0.4);
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    #race-item-slot.has-item {
+      border-color: #facc15;
+      background: radial-gradient(circle, rgba(234, 179, 8, 0.3), rgba(15, 23, 42, 0.9));
+      box-shadow: 0 0 20px rgba(250, 204, 21, 0.6);
+      transform: scale(1.05);
+    }
+    #race-item-icon {
+      font-size: 2.2rem;
+      user-select: none;
+    }
+    #race-item-prompt {
+      margin-top: 4px;
+      font-size: 0.72rem;
+      font-weight: bold;
+      color: #e2e8f0;
+      text-align: center;
+      background: rgba(15, 23, 42, 0.75);
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .roulette-spin #race-item-icon {
+      animation: rouletteShake 0.1s infinite;
+    }
+    @keyframes rouletteShake {
+      0% { transform: translateY(-2px) scale(0.95); }
+      50% { transform: translateY(2px) scale(1.05); }
+      100% { transform: translateY(-2px) scale(0.95); }
+    }
+
+    /* Barra de Drift e Mini-Turbo */
+    #drift-gauge-container {
+      position: absolute;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      text-align: center;
+      z-index: 15;
+      min-width: 200px;
+    }
+    #drift-gauge-label {
+      font-size: 0.82rem;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    }
+    #drift-gauge-bar {
+      width: 100%;
+      height: 12px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    }
+    #drift-gauge-fill {
+      width: 0%;
+      height: 100%;
+      background: #38bdf8;
+      transition: width 0.05s linear;
+    }
+
+    /* Container e Popups de Conquistas */
+    #achievement-toast-container {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .achievement-toast-popup {
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
+      border: 2px solid #eab308;
+      box-shadow: 0 8px 25px rgba(234, 179, 8, 0.4);
+      border-radius: 14px;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: white;
+      min-width: 300px;
+      animation: achievementSlideDown 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transition: opacity 0.5s, transform 0.5s;
+    }
+    .achievement-toast-popup.fade-out {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    @keyframes achievementSlideDown {
+      from { transform: translateY(-50px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .achievement-icon { font-size: 2.2rem; }
+    .achievement-info { text-align: left; }
+    .achievement-badge { font-size: 0.68rem; font-weight: 900; color: #facc15; letter-spacing: 0.5px; }
+    .achievement-title { font-size: 0.95rem; font-weight: bold; color: #f8fafc; margin: 1px 0; }
+    .achievement-desc { font-size: 0.76rem; color: #94a3b8; }
+
+    /* Botões Mobile de Item, Drift e Emote */
+    #item-use-btn {
+      position: absolute;
+      bottom: 125px;
+      right: 195px;
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, rgba(234, 179, 8, 0.7), rgba(249, 115, 22, 0.7));
+      backdrop-filter: blur(5px);
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      border-radius: 50%;
+      color: white;
+      font-size: 1.4rem;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      z-index: 15;
+      box-shadow: 0 6px 14px rgba(249, 115, 22, 0.4);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #drift-btn {
+      position: absolute;
+      bottom: 35px;
+      right: 195px;
+      width: 65px;
+      height: 65px;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.65), rgba(99, 102, 241, 0.65));
+      backdrop-filter: blur(5px);
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      border-radius: 50%;
+      color: white;
+      font-size: 1.5rem;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      z-index: 15;
+      box-shadow: 0 6px 14px rgba(168, 85, 247, 0.4);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #emote-wheel-btn {
+      position: absolute;
+      bottom: 35px;
+      left: 170px;
+      width: 50px;
+      height: 50px;
+      background: rgba(30, 41, 59, 0.75);
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      color: white;
+      font-size: 1.3rem;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      z-index: 15;
+      user-select: none;
+    }
+
+    /* Seletor de Pistas no Teleférico */
+    .track-select-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .track-select-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .track-select-card:hover {
+      border-color: #38bdf8;
+      background: rgba(56, 189, 248, 0.15);
+      transform: translateY(-1px);
+    }
+    .track-select-card.active {
+      border-color: #22c55e;
+      background: rgba(34, 197, 94, 0.18);
+    }
+    .track-icon { font-size: 1.8rem; }
+    .track-info { flex: 1; }
+    .track-name { font-weight: bold; font-size: 0.9rem; color: #f8fafc; }
+    .track-desc { font-size: 0.72rem; color: #94a3b8; }
+    .track-check { font-size: 0.76rem; font-weight: bold; color: #22c55e; }
+
+    /* Grid de Emotes */
+    .emote-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .emote-choice-btn {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      padding: 12px 8px;
+      color: white;
+      font-size: 0.85rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .emote-choice-btn:hover {
+      background: rgba(56, 189, 248, 0.35);
+      border-color: #38bdf8;
+      transform: scale(1.03);
+    }
   </style>
 </head>
 <body>
 
   <!-- Badge com o Número da Versão Ativa -->
   <div id="version-badge">v2.6.0-STABLE</div>
+
+  <!-- Badge de Conexão Multiplayer -->
+  <div id="network-status-badge">🟢 Online: 1 piloto</div>
 
   <!-- Container de Toasts Elegantes -->
   <div id="toast-container"></div>
@@ -1001,14 +1445,85 @@
     </div>
   </div>
 
+  <!-- Chat & Emotes do Hub -->
+  <div id="hub-chat-container">
+    <div id="hub-chat-messages">
+      <div class="chat-msg chat-msg-system">❄️ Bem-vindo à Vila Alpina!</div>
+    </div>
+    <div id="hub-chat-input-row">
+      <input type="text" id="hub-chat-input" placeholder="Conversar na vila... [Enter]" maxlength="80" autocomplete="off">
+      <button id="hub-chat-send-btn">Enviar</button>
+    </div>
+    <div id="hub-quick-emotes">
+      <button class="emote-btn" data-emote="👋 Olá a todos!">👋 Acenar</button>
+      <button class="emote-btn" data-emote="❄️ Guerra de Neve!">❄️ Neve</button>
+      <button class="emote-btn" data-emote="🎉 Viva a Vila!">🎉 Viva</button>
+      <button class="emote-btn" data-emote="🪑 Relaxando no banco!">🪑 Relaxar</button>
+    </div>
+  </div>
+
   <!-- HUD de Corrida -->
   <div id="racing-hud">
     🏆 Pontuação: <span id="score-val">0</span>
     <span style="margin-left: 12px; font-size: 0.9rem; color: #38bdf8;">⚡ <span id="speed-val">0</span> km/h</span>
     <span style="margin-left: 12px; font-size: 0.9rem; color: #22c55e;">🎿 Slalom: <span id="slalom-hud-val">0</span></span>
+    <span style="margin-left: 12px; font-size: 0.9rem; color: #facc15;">🪙 <span id="race-coins-val">0</span></span>
+  </div>
+
+  <!-- Caixa de Item / Slot de Power-up estilo Mario Kart -->
+  <div id="race-item-slot-container">
+    <div id="race-item-slot">
+      <div id="race-item-icon">❓</div>
+    </div>
+    <div id="race-item-prompt">Passe nas Caixas de Item</div>
+  </div>
+
+  <!-- Barra Dinâmica de Drift e Mini-Turbo -->
+  <div id="drift-gauge-container">
+    <div id="drift-gauge-label">Derrapando...</div>
+    <div id="drift-gauge-bar">
+      <div id="drift-gauge-fill"></div>
+    </div>
+  </div>
+
+  <!-- Tabela de Posições na Corrida (Multiplayer Leaderboard) -->
+  <div id="race-multiplayer-leaderboard">
+    <div class="race-lead-header">🏁 Posições ao Vivo</div>
+    <div id="race-lead-list">
+      <div class="race-lead-item you"><span>1º Você</span><span>0m</span></div>
+    </div>
   </div>
 
   <button id="back-hub-btn">⬅ Voltar à Vila</button>
+
+  <!-- Lobby do Teleférico / Aguardando Pilotos -->
+  <div id="cable-car-lobby-modal">
+    <div class="lobby-card">
+      <div style="font-size: 3rem; margin-bottom: 8px;">🚠❄️</div>
+      <h2 style="color: #38bdf8; margin: 0 0 6px 0;">Teleférico da Corrida</h2>
+      <p style="color: #94a3b8; font-size: 0.88rem; margin: 0 0 12px 0;">Aguardando pilotos para a descida sincronizada da montanha:</p>
+      
+      <!-- Seletor de Pista -->
+      <div style="margin: 12px 0; text-align: left;">
+        <label style="font-size: 0.82rem; font-weight: bold; color: #38bdf8; margin-bottom: 6px; display: block;">🗺️ Circuito da Montanha:</label>
+        <div id="track-select-container" class="track-select-grid"></div>
+      </div>
+
+      <div class="lobby-pilots-list" id="lobby-pilots-container">
+        <!-- Renderizado dinamicamente -->
+      </div>
+      <div id="lobby-countdown-msg" style="font-weight: bold; color: #facc15; font-size: 1.1rem; margin-bottom: 14px;">
+        Partida em: <span id="lobby-countdown-val">5</span>s
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button id="lobby-ready-btn" class="btn" style="flex: 2; margin: 0;">⚡ Estou Pronto!</button>
+        <button id="lobby-cancel-btn" class="btn secondary" style="flex: 1; margin: 0;">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contagem Regressiva Visual 3, 2, 1, VAI! -->
+  <div id="race-countdown-overlay">3</div>
 
   <!-- PROMPTS INTERATIVOS (Aparecem quando o jogador se aproxima no Hub) -->
   <div id="cable-car-prompt" class="interactive-prompt" style="border-color: #38bdf8;">
@@ -1139,6 +1654,23 @@
           <span class="settings-sub">Sons de slalom, pulos e vitórias</span>
         </div>
         <input type="checkbox" id="sound-fx-toggle" checked style="width:20px; height:20px; cursor:pointer;">
+      </div>
+      <div class="settings-row">
+        <div>
+          <span class="settings-label">Música de Fundo (BGM)</span>
+          <span class="settings-sub">Trilhas dinâmicas para vila, descida e batalha</span>
+        </div>
+        <input type="checkbox" id="bgm-music-toggle" checked style="width:20px; height:20px; cursor:pointer;">
+      </div>
+      <div class="settings-row">
+        <div>
+          <span class="settings-label">Volume da Música</span>
+          <span class="settings-sub">Intensidade sonora da trilha</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="range" id="bgm-volume-slider" class="settings-slider" min="0" max="1" step="0.05" value="0.45">
+          <span id="bgm-volume-val" style="font-weight:bold; color:#38bdf8; min-width:38px; text-align:right;">45%</span>
+        </div>
       </div>
       <button id="reset-settings-btn" class="btn secondary" style="margin-top:14px;">Restaurar Padrões</button>
     </div>
@@ -1313,6 +1845,14 @@
         </div>
       </div>
 
+      <!-- Pódio Multiplayer da Corrida -->
+      <div id="finish-multiplayer-leaderboard" style="display:none; margin: 12px 0; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; padding: 12px;">
+        <h4 style="margin: 0 0 8px 0; color: #38bdf8; font-size: 0.95rem;">🏆 Classificação da Corrida:</h4>
+        <div id="finish-podium-list" style="display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem;">
+          <!-- Itens do pódio -->
+        </div>
+      </div>
+
       <button id="retry-race-btn" class="btn" style="background: linear-gradient(to right, #0ea5e9, #22c55e);">🔄 Correr Novamente</button>
       <button id="finish-to-hub-btn" class="btn secondary">🏔️ Voltar à Vila Alpina</button>
     </div>
@@ -1391,6 +1931,52 @@
   <div id="snowball-btn" title="Segure para carregar e arremessar bola de neve">❄️</div>
   <div id="aim-btn" title="Mira Tática (ADS)">🎯</div>
   <div id="interact-btn" title="Interagir">✋ AÇÃO</div>
+  <div id="item-use-btn" title="Usar Item (Corrida)">🌶️</div>
+  <div id="drift-btn" title="Segure para Derrapar / Mini-Turbo">⚡</div>
+  <div id="emote-wheel-btn" title="Dancinhas e Emotes">🎭</div>
+
+  <!-- Container de Popups de Conquistas -->
+  <div id="achievement-toast-container"></div>
+
+  <!-- Modal de Escolha do Modo de Guerra de Bolas de Neve -->
+  <div id="snowball-war-choice-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width: 480px; text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: 8px;">⚔️❄️</div>
+      <h2 style="color: #38bdf8; margin: 0 0 8px 0;">Arena de Guerra de Neve</h2>
+      <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 18px;">Escolha como você deseja batalhar na neve:</p>
+      
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px;">
+        <button id="war-choice-pvp-btn" class="btn" style="background: linear-gradient(135deg, #0284c7, #06b6d4); font-size: 1rem; padding: 14px;">
+          🌐 <strong>Batalha Online PvP (Multiplayer)</strong>
+          <div style="font-size: 0.76rem; opacity: 0.85; margin-top: 2px;">Lute contra até 8 jogadores reais em tempo real!</div>
+        </button>
+        <button id="war-choice-solo-btn" class="btn secondary" style="font-size: 0.95rem; padding: 12px;">
+          🤖 <strong>Treino Solo vs Bots</strong>
+          <div style="font-size: 0.76rem; opacity: 0.85; margin-top: 2px;">Treine sua mira contra inteligências artificiais</div>
+        </button>
+      </div>
+
+      <button id="war-choice-close-btn" class="btn" style="background: #475569; width: 100%;">Fechar</button>
+    </div>
+  </div>
+
+  <!-- Modal de Roda de Emotes & Dancinhas 3D -->
+  <div id="emote-wheel-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width: 420px; text-align: center;">
+      <div style="font-size: 2.5rem; margin-bottom: 6px;">🎭✨</div>
+      <h3 style="color: #38bdf8; margin: 0 0 6px 0;">Dancinhas & Emotes 3D</h3>
+      <p style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 12px;">Escolha uma dancinha ou gesto para exibir a todos na vila:</p>
+      <div class="emote-grid">
+        <button class="emote-choice-btn" data-anim="dance_penguin">🕺 Dança Pinguim</button>
+        <button class="emote-choice-btn" data-anim="wave">👋 Acenar</button>
+        <button class="emote-choice-btn" data-anim="victory">🏆 Comemorar</button>
+        <button class="emote-choice-btn" data-anim="shiver">🥶 Tremer de Frio</button>
+        <button class="emote-choice-btn" data-anim="sit">🪑 Sentar na Neve</button>
+        <button class="emote-choice-btn" data-anim="cheer">🎉 Viva a Vila!</button>
+      </div>
+      <button id="close-emote-wheel-btn" class="btn secondary" style="width: 100%; margin-top: 14px;">Fechar [ESC]</button>
+    </div>
+  </div>
 
   <div id="app"></div>
   <script type="module" src="/src/main.ts"></script>

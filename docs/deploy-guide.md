@@ -24,7 +24,7 @@ Sim, **dá para fazer tudo 100% via linha de comando (CLI)** na Vercel! É a for
    ```
 3. **Fazer o deploy direto da pasta do cliente:**
    ```bash
-   cd /home/chris/projetos/snow-slide-multiplayer/client
+   cd client
    vercel --prod
    ```
    *(A CLI vai perguntar em qual projeto deseja vincular, confirmar o diretório de build `dist` e gerar um link permanente `https://...` instantaneamente).*
@@ -49,19 +49,24 @@ Como o seu jogo possui **multiplayer em tempo real**, o servidor Node.js (Colyse
 
 ---
 
-## 4. Arquivo de Configuração para o Render (`render.yaml`)
-Para automatizar o deploy do servidor no Render, criamos o arquivo `render.yaml` na raiz do projeto:
+## 4. Ambientes de Produção Ativos
 
-```yaml
-services:
-  - type: web
-    name: snow-slide-server
-    env: node
-    region: ohio
-    plan: free
-    buildCommand: cd server && npm install && npm run build
-    startCommand: cd server && npm start
-    envVars:
-      - key: PORT
-        value: 2567
-```
+Os deploys foram realizados com sucesso e estão operacionais:
+
+- 🎮 **Cliente Web (Vercel):** [https://snow-slide-multiplayer.vercel.app](https://snow-slide-multiplayer.vercel.app)
+- ⚙️ **Servidor Autoritativo WebSocket (Railway):** `wss://truthful-charm-production-bdfb.up.railway.app`
+  - Endpoint de Healthcheck: [https://truthful-charm-production-bdfb.up.railway.app/health](https://truthful-charm-production-bdfb.up.railway.app/health)
+  - Endpoint de Status: [https://truthful-charm-production-bdfb.up.railway.app/](https://truthful-charm-production-bdfb.up.railway.app/)
+
+### Como Testar o Multiplayer em Tempo Real:
+1. Abra [https://snow-slide-multiplayer.vercel.app](https://snow-slide-multiplayer.vercel.app) em uma aba do navegador.
+2. Observe o badge **🟢 Online** no canto superior direito.
+3. Abra uma segunda aba (ou janela anônima, ou envie o link para um amigo).
+4. No hub da Vila Alpina:
+   - Os avatares 3D aparecem sincronizados com nametag flutuante.
+   - Pressione **Enter** ou clique no chat para enviar mensagens sincronizadas.
+   - Pressione **F** ou o botão de bola de neve para lançar bolas de neve físicas entre os jogadores.
+5. Na cabine do Teleférico (Cable Car):
+   - Aproxime-se para entrar na fila da corrida.
+   - Ao iniciar, os jogadores são teleportados para a pista com contagem regressiva e placar em tempo real.
+

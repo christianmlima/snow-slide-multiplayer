@@ -8,6 +8,8 @@
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "types": [],
     "strict": false
-  }
+  },
+  "exclude": ["**/*.test.ts"]
 }
